@@ -1,1 +1,10 @@
-{"name":"@lab/orders","version":"1.0.0","private":true,"type":"module","scripts":{"dev":"APP_NAME=orders vite --config ../../vite.config.ts","build":"node ../../scripts/build.mjs --app=orders"}}
+{
+  "name": "@lab/orders",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "APP_NAME=orders vite --config ../../vite.config.ts",
+    "build": "node ../../scripts/build.mjs --app=orders"
+  }
+}

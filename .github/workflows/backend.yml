@@ -2,7 +2,14 @@ name: Backend pipeline
 on:
   push:
     branches: [main]
-    paths: ['server/**', 'package*.json', 'scripts/cloud.mjs', 'tests/api.test.mjs', '.github/workflows/backend.yml']
+    paths:
+      [
+        'server/**',
+        'package*.json',
+        'scripts/cloud.mjs',
+        'tests/api.test.mjs',
+        '.github/workflows/backend.yml',
+      ]
   pull_request:
     paths: ['server/**', 'package*.json', 'tests/api.test.mjs', '.github/workflows/backend.yml']
   workflow_dispatch:
