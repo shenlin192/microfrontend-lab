@@ -1,0 +1,35 @@
+name: Catalog pipeline
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/catalog/**'
+      - 'packages/**'
+      - 'package*.json'
+      - 'vite.config.ts'
+      - 'tsconfig.json'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'playwright.config.ts'
+      - '.github/workflows/_frontend.yml'
+      - '.github/workflows/catalog.yml'
+  pull_request:
+    paths:
+      - 'apps/catalog/**'
+      - 'packages/**'
+      - 'package*.json'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'vite.config.ts'
+      - 'tsconfig.json'
+      - 'playwright.config.ts'
+      - '.github/workflows/**'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    uses: ./.github/workflows/_frontend.yml
+    with:
+      app: catalog
+    secrets: inherit

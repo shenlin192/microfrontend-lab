@@ -1,0 +1,31 @@
+import {test,expect} from '@playwright/test';
+const preview=process.env.CANDIDATE?`?preview=${process.env.CANDIDATE}`:'';
+test('real register, order event, nested route, persistent session, logout',async({page,context})=>{
+ const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.goto('/catalog'+preview);await expect(page.getByRole('heading',{name:'Good things, simply made.'})).toBeVisible();
+ await page.getByRole('button',{name:'Sign in / create account'}).click();
+ await page.getByLabel('Name',{exact:true}).fill('Test Learner');
+ await page.getByLabel('Email',{exact:true}).fill(`learner-${Date.now()}@example.test`);
+ await page.getByLabel('Password',{exact:true}).fill('learning-password-123');
+ await page.getByRole('button',{name:'Create account',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Place an order ↗'})).toHaveCount(3);
+ const cookies=await context.cookies();expect(cookies.find(c=>c.name==='mfl_session')?.httpOnly).toBe(true);
+ await page.getByRole('button',{name:'Place an order ↗'}).first().click();
+ await expect(page.getByText('EVENT order:created v1 ← catalog')).toBeVisible();
+ await page.getByRole('button',{name:'View orders →'}).click();
+ await expect(page.getByText('1 saved order',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:/Field notes.*Quantity/}).click();
+ await expect(page.getByRole('heading',{name:'A closer look.'})).toBeVisible();
+ await page.reload();await expect(page.getByRole('heading',{name:'A closer look.'})).toBeVisible();
+ await page.getByRole('button',{name:'Sign out',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Sign in / create account'})).toBeVisible();expect(errors).toEqual([]);
+});
+test('local state resets; a genuine remote 404 is isolated and recoverable',async({page})=>{
+ await page.goto('/catalog'+preview);await page.getByRole('button',{name:'Paper',exact:true}).click();await expect(page.getByRole('heading',{name:'Everyday cup'})).toHaveCount(0);
+ await page.getByRole('button',{name:/▤ Orders/}).click();await expect(page.getByRole('heading',{name:'Small things, kept.'})).toBeVisible();
+ await page.getByRole('button',{name:/▦ Catalog/}).click();await expect(page.getByRole('heading',{name:'Everyday cup'})).toBeVisible();
+ await page.getByRole('button',{name:'07 Failures ↗'}).click();await page.getByRole('button',{name:'Try a missing Orders release'}).click();
+ await expect(page.getByRole('heading',{name:'This application could not load.'})).toBeVisible();
+ await page.getByRole('button',{name:/▦ Catalog/}).click();await expect(page.getByRole('heading',{name:'Good things, simply made.'})).toBeVisible();
+ await page.getByRole('button',{name:/▤ Orders/}).click();await page.getByRole('button',{name:'Restore release and retry'}).click();await expect(page.getByRole('heading',{name:'Small things, kept.'})).toBeVisible();
+});

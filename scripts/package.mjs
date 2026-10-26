@@ -1,0 +1,10 @@
+import {resolve} from 'node:path';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {root,arg,appName,valid,run} from './lib.mjs';
+const app=appName(arg('app')),version=valid(arg('version'));
+const dir=resolve(root,'.artifacts',app,version),out=resolve(root,'.artifacts/packages',app,version);await mkdir(out,{recursive:true});
+await run('tar',['-czf',resolve(out,`${app}.tar.gz`),'-C',dir,'.']);
+const hash=createHash('sha256').update(await readFile(resolve(out,`${app}.tar.gz`))).digest('hex');
+await writeFile(resolve(out,`${app}.sha256`),`${hash}  ${app}.tar.gz\n`);
+console.log(`Packaged ${out}`);

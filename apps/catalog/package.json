@@ -1,0 +1,1 @@
+{"name":"@lab/catalog","version":"1.0.0","private":true,"type":"module","scripts":{"dev":"APP_NAME=catalog vite --config ../../vite.config.ts","build":"node ../../scripts/build.mjs --app=catalog"}}

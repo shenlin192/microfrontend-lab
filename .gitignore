@@ -1,0 +1,11 @@
+node_modules/
+.artifacts/
+.deploy/
+.data/
+.cloud/
+.wrangler/
+playwright-report/
+test-results/
+.env*
+.dev.vars*
+*.log

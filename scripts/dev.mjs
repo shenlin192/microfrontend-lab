@@ -1,0 +1,11 @@
+import {spawn} from 'node:child_process';
+import {arg,appName,run,root} from './lib.mjs';
+await run('node',['scripts/setup.mjs']);
+const app=appName(arg('app','orders')),ports={shell:4200,catalog:4201,orders:4202};
+const children=[];
+const launch=(cmd,args,extra={})=>{const child=spawn(cmd,args,{cwd:root,stdio:'inherit',env:{...process.env,...extra}});children.push(child);return child;};
+launch('node',['server/local.mjs'],{DEV_ORIGIN:'http://localhost:4200'});
+launch('node',['node_modules/vite/bin/vite.js','--config','vite.config.ts'],{APP_NAME:app,RELEASE_VERSION:'dev'});
+console.log(app==='shell'?'Open http://localhost:4200':`Open http://localhost:4100/${app}?dev=${app}`);
+console.log(`Only ${app} is in development. Other apps use their deployed artifacts.`);
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{for(const child of children)child.kill(signal);process.exit(0);});
