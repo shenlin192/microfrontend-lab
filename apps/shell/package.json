@@ -1,10 +1,13 @@
 {
-  "name": "@lab/shell",
-  "version": "1.0.0",
+  "name": "shell",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "APP_NAME=shell vite --config ../../vite.config.ts",
-    "build": "node ../../scripts/build.mjs --app=shell"
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   }
 }

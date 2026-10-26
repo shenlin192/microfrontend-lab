@@ -1,0 +1,6 @@
+packages:
+  - 'apps/*'
+
+allowBuilds:
+  nx: true
+  esbuild: true
