@@ -11,5 +11,6 @@
         "{projectRoot}/dist"
       ]
     }
-  }
+  },
+  "analytics": false
 }

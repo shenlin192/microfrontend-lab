@@ -7,11 +7,12 @@ export default defineConfig({
     react(),
     federation({
       name: 'orders',
+      dev: { remoteHmr: true },
       filename: 'remoteEntry.js',
       exposes: { './App': './src/App.jsx' },
       shared: { react: { singleton: true }, 'react-dom': { singleton: true } },
       dts: false,
     }),
   ],
-  server: { port: 4102, strictPort: true, origin: 'http://localhost:4102' },
+  server: { port: 4102, strictPort: true, watch: { usePolling: true }, origin: 'http://localhost:4102' },
 });

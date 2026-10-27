@@ -7,6 +7,7 @@ export default defineConfig({
     react(),
     federation({
       name: 'shell',
+      dev: { remoteHmr: true },
       remotes: {
         catalog: { type: 'module', name: 'catalog', entry: 'http://localhost:4101/remoteEntry.js' },
         orders: { type: 'module', name: 'orders', entry: 'http://localhost:4102/remoteEntry.js' },
@@ -15,5 +16,5 @@ export default defineConfig({
       dts: false,
     }),
   ],
-  server: { port: 4100, strictPort: true, origin: 'http://localhost:4100' },
+  server: { port: 4100, strictPort: true, watch: { usePolling: true }, origin: 'http://localhost:4100' },
 });
