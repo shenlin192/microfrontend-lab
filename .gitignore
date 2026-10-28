@@ -2,3 +2,6 @@ node_modules/
 dist/
 .nx/
 .DS_Store
+.env
+.env.*
+!.env.example
