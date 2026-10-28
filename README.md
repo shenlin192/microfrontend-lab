@@ -42,4 +42,8 @@ pnpm build           # Check all three independent production builds
 
 `pnpm dev` runs the three commands together. Keep both remotes running when navigating through the host. `dev.remoteHmr: true` enables React Fast Refresh across the federation boundary. `server.watch.usePolling: true` makes Vite detect edits reliably in this local environment, where native file notifications were missed (polling uses more CPU). Restart `pnpm dev` after changing the Vite configs.
 
-There is no backend, authentication, styling, shared application package, test framework, CI, or cloud deployment.
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on pull requests and pushes to `main`. It uses Node 24.15.0 and the pnpm version pinned in `package.json`, installs dependencies with `pnpm install --frozen-lockfile`, then runs `pnpm build` through Nx for all three apps. The `Build all apps` check verifies compilation; it does not yet test remote loading in a browser.
+
+There is no backend, authentication, styling, shared application package, test framework, or cloud deployment.
