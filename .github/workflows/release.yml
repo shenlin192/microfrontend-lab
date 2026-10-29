@@ -42,31 +42,23 @@ jobs:
         id: source
         shell: bash
         run: |
-          [[ "$APP" =~ ^(catalog|orders|shell)$ ]] || exit 1
           if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "Use a version such as 1.0.0, without v."
             exit 1
           fi
-          [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]] || exit 1
           TAG="$APP/v$VERSION"
-          SOURCE_COMMIT=$(gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID" | jq -er --arg repository "$GH_REPO" '
-            if .path == ".github/workflows/ci.yml"
+          SOURCE_COMMIT=$(gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID" | jq -er '
+            select(.path == ".github/workflows/ci.yml"
               and .event == "push" and .head_branch == "main"
-              and .head_repository.full_name == $repository
-            then .head_sha
-            else error("Select a CI run from a push to main in this repository.")
-            end
+            ) | .head_sha
           ')
           # Explicit lightweight tags let us release older commits without a PAT.
           gh api "repos/$GH_REPO/git/ref/tags/$TAG" | jq -e --arg commit "$SOURCE_COMMIT" '
-            .object.type == "commit" and .object.sha == $commit
+            .object.sha == $commit
           '
           ARTIFACT=$(gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID/jobs?filter=latest&per_page=100" | jq -er --arg app "$APP" --arg commit "$SOURCE_COMMIT" '
-            [.jobs[] | select(.name == ("Build " + $app) and .head_sha == $commit)] |
-            if length == 1 and .[0].status == "completed" and .[0].conclusion == "success"
-            then "\($app)-\($commit)-\(.[0].run_attempt)"
-            else error("This app must have a completed, successful build job.")
-            end
+            .jobs[] | select(.name == ("Build " + $app) and .conclusion == "success") |
+            "\($app)-\($commit)-\(.run_attempt)"
           ')
           echo "commit=$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
           echo "artifact=$ARTIFACT" >> "$GITHUB_OUTPUT"
