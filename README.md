@@ -94,7 +94,7 @@ On success, find the named release under GitHub → **Releases** → **Assets**:
 
 There are no CI run IDs to copy, manual release form, artifact searches, or expiring Actions artifacts. Each version is built once for publication; deploying or rolling back uses the published files without rebuilding. This release build is independent of any earlier build you ran locally.
 
-Release immutability is enabled for this repository. The workflow uploads assets to a draft before publishing, then GitHub locks the published assets and tag. Existing versions are never overwritten. If an upload fails and leaves an unpublished draft, remove that draft before rerunning the failed workflow; keep the tag at the same commit. This demo accepts stable `MAJOR.MINOR.PATCH` versions, without prerelease suffixes.
+Release immutability is enabled for this repository. A single `gh release create` command uploads the assets and publishes the release. The CLI handles the temporary draft internally so all assets are uploaded before GitHub locks the published assets and tag. Existing versions are never overwritten. If an upload fails and leaves an unpublished draft, remove that draft before rerunning the failed workflow; keep the tag at the same commit. This demo accepts stable `MAJOR.MINOR.PATCH` versions, without prerelease suffixes.
 
 Pushing the tag explicitly requests a release. **It does not deploy anything to Cloudflare.**
 

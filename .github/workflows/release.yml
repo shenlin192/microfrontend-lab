@@ -70,10 +70,9 @@ jobs:
             echo "Built from $TAG. This release does not deploy the app."
             echo "Run the app's manual Deploy workflow with version $VERSION to deploy."
           } > notes.md
-          # Upload all assets before publishing, so immutable releases can lock them.
+          # gh uploads the assets to a draft, then publishes it automatically.
           gh release create "$TAG" "$APP.tar.gz" release.json --verify-tag \
-            --title "$TAG" --notes-file notes.md --draft --latest=false
-          gh release edit "$TAG" --draft=false --latest=false
+            --title "$TAG" --notes-file notes.md --latest=false
           {
             echo "### Released $TAG"
             echo "Release: https://github.com/$GH_REPO/releases/tag/$TAG"
