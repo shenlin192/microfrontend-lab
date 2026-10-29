@@ -77,13 +77,22 @@ Each successful app job from a push to `main` uploads its own `dist` directory a
 
 CI never releases or deploys automatically. Each app has its own readable version, such as `catalog/v1.0.0`, `orders/v1.0.0`, or `shell/v1.0.0`. Versions do not need to advance together.
 
-1. Open a CI run from a push to `main`. Copy its run ID. Only the selected app's build job needs to have succeeded; another app may have failed or still be running.
-2. Open GitHub → Actions → **Release app** → **Run workflow**, choose `main`, the app, a new version such as `1.0.0` (without `v`), and the CI run ID.
-3. Find the resulting GitHub Release, for example `catalog/v1.0.0`.
+1. Open a CI run from a push to `main`. Copy its run ID and source commit SHA. Only the selected app's build job needs to have succeeded; another app may have failed or still be running.
+2. Push a new lightweight version tag at that source commit (replace `<CI_COMMIT_SHA>` with the actual SHA):
 
-The workflow verifies the CI source and the selected app's successful job, downloads its exact artifact, and archives its files without rebuilding. The tag points to the original CI commit, even if the release workflow runs from a newer commit. Release assets are `<app>.tar.gz` and `release.json` (app, version, commit, CI run, artifact name, and archive SHA-256).
+   ```sh
+   git tag catalog/v1.0.0 <CI_COMMIT_SHA>
+   git push origin catalog/v1.0.0
+   ```
 
-Enable **Settings → General → Releases → Enable release immutability** before publishing releases. GitHub then locks the published assets and tag. The workflow uploads assets to a draft before publishing. It rejects an existing version, and deployment accepts only published immutable releases. If an upload fails and leaves a draft, remove that unpublished draft and its tag before retrying. This demo accepts stable `MAJOR.MINOR.PATCH` versions; no prerelease suffixes yet.
+3. Open GitHub → Actions → **Release app** → **Run workflow**, choose `main`, the app, version `1.0.0` (without `v`), and the CI run ID.
+4. Find the resulting GitHub Release, for example `catalog/v1.0.0`.
+
+Pushing a version tag does not build, release, or deploy automatically. Creating the tag explicitly also avoids granting an extra personal token to Actions just to tag an older commit.
+
+The workflow verifies the CI source, the selected app's successful job, and that the version tag points to exactly that CI commit. It downloads the exact artifact and archives its files without rebuilding. The release workflow itself runs from `main`, so it can publish builds of older commits. Release assets are `<app>.tar.gz` and `release.json` (app, version, commit, CI run, artifact name, and archive SHA-256).
+
+Enable **Settings → General → Releases → Enable release immutability** before publishing releases. GitHub then locks the published assets and tag. The workflow uploads assets to a draft before publishing. It rejects an existing release, and deployment accepts only published immutable releases. If an upload fails and leaves a draft, remove that unpublished draft before retrying; keep the tag at the same source commit. This demo accepts stable `MAJOR.MINOR.PATCH` versions; no prerelease suffixes yet.
 
 CI artifacts expire after 30 days, so create a release while the artifact is available. Published release assets survive that CI artifact expiration. Creating a release does not contact Cloudflare or change the running app.
 

@@ -9,7 +9,7 @@ on:
         type: choice
         options: [catalog, orders, shell]
       version:
-        description: 'New version, for example 1.0.0 (without v)'
+        description: 'Version tag already pushed, for example 1.0.0 for catalog/v1.0.0'
         required: true
         type: string
       ci_run_id:
@@ -49,11 +49,6 @@ jobs:
           fi
           [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]] || exit 1
           TAG="$APP/v$VERSION"
-          refs=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$TAG")
-          if jq -e --arg ref "refs/tags/$TAG" 'any(.[]; .ref == $ref)' <<< "$refs"; then
-            echo "This version already exists. Choose a new version; never overwrite a release."
-            exit 1
-          fi
           SOURCE_COMMIT=$(gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID" | jq -er --arg repository "$GH_REPO" '
             if .path == ".github/workflows/ci.yml"
               and .event == "push" and .head_branch == "main"
@@ -62,6 +57,10 @@ jobs:
             else error("Select a CI run from a push to main in this repository.")
             end
           ')
+          # Explicit lightweight tags let us release older commits without a PAT.
+          gh api "repos/$GH_REPO/git/ref/tags/$TAG" | jq -e --arg commit "$SOURCE_COMMIT" '
+            .object.type == "commit" and .object.sha == $commit
+          '
           ARTIFACT=$(gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID/jobs?filter=latest&per_page=100" | jq -er --arg app "$APP" --arg commit "$SOURCE_COMMIT" '
             [.jobs[] | select(.name == ("Build " + $app) and .head_sha == $commit)] |
             if length == 1 and .[0].status == "completed" and .[0].conclusion == "success"
@@ -104,7 +103,7 @@ jobs:
             echo "Run the app's manual Deploy workflow with version $VERSION to deploy."
           } > notes.md
           # Upload all assets before publishing, so immutable releases can lock them.
-          gh release create "$TAG" "$APP.tar.gz" release.json --target "$SOURCE_COMMIT" \
+          gh release create "$TAG" "$APP.tar.gz" release.json --verify-tag \
             --title "$TAG" --notes-file notes.md --draft --latest=false
           gh release edit "$TAG" --draft=false --latest=false
           {
