@@ -3,14 +3,13 @@ name: Deploy Shell
 on:
   workflow_dispatch:
     inputs:
-      ci_run_id:
-        description: 'CI run ID with a successful Build shell job from a push to main'
+      version:
+        description: 'Published shell version, for example 1.0.0 (without v)'
         required: true
         type: string
 
 permissions:
   contents: read
-  actions: read
 
 # Let an active upload finish before starting another Shell deployment.
 concurrency:
@@ -24,7 +23,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      CI_RUN_ID: ${{ inputs.ci_run_id }}
+      VERSION: ${{ inputs.version }}
+      APP: shell
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Set up Node.js for the deployment CLI
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -32,48 +33,31 @@ jobs:
           node-version: '24.15.0'
           package-manager-cache: false
 
-      - name: Verify the selected CI source
+      - name: Download and verify the selected release
         id: source
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]]; then
-            echo "CI run ID must be a number."
+          if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Use a published version such as 1.0.0, without v."
             exit 1
           fi
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID" | jq -er --arg repository "$GITHUB_REPOSITORY" '
-            if .path == ".github/workflows/ci.yml"
-              and .event == "push" and .head_branch == "main"
-              and .head_repository.full_name == $repository
-            then "commit=\(.head_sha)"
-            else error("Select a CI run from a push to main in this repository.")
-            end
-          ' >> "$GITHUB_OUTPUT"
-
-      # Other apps may still be running or may have failed.
-      - name: Verify only Shell's build job
-        id: shell
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/jobs?filter=latest&per_page=100" | jq -er --arg commit "$SOURCE_COMMIT" '
-            [.jobs[] | select(.name == "Build shell" and .head_sha == $commit)] |
-            if length == 1 and .[0].status == "completed" and .[0].conclusion == "success"
-            then "artifact=shell-\($commit)-\(.[0].run_attempt)"
-            else error("The selected run must contain a completed, successful Build shell job.")
-            end
-          ' >> "$GITHUB_OUTPUT"
-
-      - name: Download the exact Shell artifact
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ${{ steps.shell.outputs.artifact }}
-          run-id: ${{ inputs.ci_run_id }}
-          github-token: ${{ github.token }}
-          path: shell-dist
+          TAG="$APP/v$VERSION"
+          gh api "repos/$GH_REPO/releases/tags/$TAG" | jq -e '
+            .draft == false and .prerelease == false and .immutable == true
+          '
+          gh release download "$TAG" --pattern "$APP.tar.gz" --pattern release.json --dir release
+          COMMIT=$(jq -er --arg app "$APP" --arg version "$VERSION" --arg tag "$TAG" '
+            if .app == $app and .version == $version and .tag == $tag
+              and (.commit | test("^[0-9a-f]{40}$")) and (.sha256 | test("^[0-9a-f]{64}$"))
+            then .commit else error("Release metadata does not match the selected app/version.") end
+          ' release/release.json)
+          cd release
+          printf '%s  %s\n' "$(jq -r .sha256 release.json)" "$APP.tar.gz" | sha256sum --check
+          mkdir ../app-dist
+          tar -xzf "$APP.tar.gz" -C ../app-dist
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
 
       - name: Deploy the artifact without rebuilding
         env:
@@ -85,17 +69,15 @@ jobs:
             echo "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in repository Actions secrets."
             exit 1
           fi
-          npx --yes wrangler@4.136.3 pages deploy shell-dist --project-name=microfrontend-lab-shell --branch=main --commit-hash="$SOURCE_COMMIT"
+          npx --yes wrangler@4.136.3 pages deploy app-dist --project-name=microfrontend-lab-shell --branch=main --commit-hash="$SOURCE_COMMIT"
 
       - name: Record deployment
         env:
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
-          ARTIFACT_NAME: ${{ steps.shell.outputs.artifact }}
         run: |
           {
             echo "### Shell deployment"
             echo "Commit: $SOURCE_COMMIT"
-            echo "CI run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID"
-            echo "Artifact: $ARTIFACT_NAME"
+            echo "Release: https://github.com/$GH_REPO/releases/tag/$APP/v$VERSION"
             echo "URL: https://microfrontend-lab-shell.pages.dev"
           } >> "$GITHUB_STEP_SUMMARY"

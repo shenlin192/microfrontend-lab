@@ -1,0 +1,114 @@
+name: Release app
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: App to release (independent of the other apps)
+        required: true
+        type: choice
+        options: [catalog, orders, shell]
+      version:
+        description: 'New version, for example 1.0.0 (without v)'
+        required: true
+        type: string
+      ci_run_id:
+        description: 'CI run ID with a successful build job for this app from a push to main'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: release-${{ inputs.app }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release ${{ inputs.app }} v${{ inputs.version }}
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      APP: ${{ inputs.app }}
+      VERSION: ${{ inputs.version }}
+      CI_RUN_ID: ${{ inputs.ci_run_id }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Validate the version and selected CI build
+        id: source
+        shell: bash
+        run: |
+          [[ "$APP" =~ ^(catalog|orders|shell)$ ]] || exit 1
+          if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Use a version such as 1.0.0, without v."
+            exit 1
+          fi
+          [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]] || exit 1
+          TAG="$APP/v$VERSION"
+          refs=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$TAG")
+          if jq -e --arg ref "refs/tags/$TAG" 'any(.[]; .ref == $ref)' <<< "$refs"; then
+            echo "This version already exists. Choose a new version; never overwrite a release."
+            exit 1
+          fi
+          SOURCE_COMMIT=$(gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID" | jq -er --arg repository "$GH_REPO" '
+            if .path == ".github/workflows/ci.yml"
+              and .event == "push" and .head_branch == "main"
+              and .head_repository.full_name == $repository
+            then .head_sha
+            else error("Select a CI run from a push to main in this repository.")
+            end
+          ')
+          ARTIFACT=$(gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID/jobs?filter=latest&per_page=100" | jq -er --arg app "$APP" --arg commit "$SOURCE_COMMIT" '
+            [.jobs[] | select(.name == ("Build " + $app) and .head_sha == $commit)] |
+            if length == 1 and .[0].status == "completed" and .[0].conclusion == "success"
+            then "\($app)-\($commit)-\(.[0].run_attempt)"
+            else error("This app must have a completed, successful build job.")
+            end
+          ')
+          echo "commit=$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "artifact=$ARTIFACT" >> "$GITHUB_OUTPUT"
+
+      - name: Download this app's exact CI artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ steps.source.outputs.artifact }}
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          path: app-dist
+
+      - name: Preserve and publish the build without deploying
+        env:
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+          ARTIFACT_NAME: ${{ steps.source.outputs.artifact }}
+        shell: bash
+        run: |
+          TAG="$APP/v$VERSION"
+          tar -czf "$APP.tar.gz" -C app-dist .
+          DIGEST=$(sha256sum "$APP.tar.gz" | cut -d ' ' -f 1)
+          jq -n --arg app "$APP" --arg version "$VERSION" --arg tag "$TAG" \
+            --arg commit "$SOURCE_COMMIT" --arg run "$CI_RUN_ID" \
+            --arg artifact "$ARTIFACT_NAME" --arg sha256 "$DIGEST" \
+            '{app: $app, version: $version, tag: $tag, commit: $commit,
+              ciRunId: $run, artifact: $artifact, sha256: $sha256}' > release.json
+          {
+            echo "Source commit: $SOURCE_COMMIT"
+            echo "CI build: https://github.com/$GH_REPO/actions/runs/$CI_RUN_ID"
+            echo "Artifact: $ARTIFACT_NAME"
+            echo "SHA-256 ($APP.tar.gz): $DIGEST"
+            echo
+            echo "This release preserves the CI build. It does not deploy it."
+            echo "Run the app's manual Deploy workflow with version $VERSION to deploy."
+          } > notes.md
+          # Upload all assets before publishing, so immutable releases can lock them.
+          gh release create "$TAG" "$APP.tar.gz" release.json --target "$SOURCE_COMMIT" \
+            --title "$TAG" --notes-file notes.md --draft --latest=false
+          gh release edit "$TAG" --draft=false --latest=false
+          {
+            echo "### Released $TAG"
+            echo "Release: https://github.com/$GH_REPO/releases/tag/$TAG"
+            cat notes.md
+          } >> "$GITHUB_STEP_SUMMARY"

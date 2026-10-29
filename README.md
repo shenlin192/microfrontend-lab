@@ -73,40 +73,38 @@ These are public, build-time values. Changing them requires rebuilding the affec
 
 Each successful app job from a push to `main` uploads its own `dist` directory as `<app>-<commit SHA>-<run attempt>`, retained for 30 days. An Orders failure does not prevent Catalog's artifact from being uploaded. Pull requests do not produce deployable artifacts. The attempt suffix keeps reruns separate without overwriting earlier artifacts. These checks verify compilation; they do not test remote loading in a browser.
 
-## Deploy the apps
+## Release an app (manual)
 
-Each app has its own manual release workflow, deployment concurrency group, Pages project, and CI artifact. Each deployment checks only its own app's build job; another app's failure does not block it.
+CI never releases or deploys automatically. Each app has its own readable version, such as `catalog/v1.0.0`, `orders/v1.0.0`, or `shell/v1.0.0`. Versions do not need to advance together.
 
-| App | Workflow | Required CI job | Pages project |
+1. Open a CI run from a push to `main`. Copy its run ID. Only the selected app's build job needs to have succeeded; another app may have failed or still be running.
+2. Open GitHub → Actions → **Release app** → **Run workflow**, choose `main`, the app, a new version such as `1.0.0` (without `v`), and the CI run ID.
+3. Find the resulting GitHub Release, for example `catalog/v1.0.0`.
+
+The workflow verifies the CI source and the selected app's successful job, downloads its exact artifact, and archives its files without rebuilding. The tag points to the original CI commit, even if the release workflow runs from a newer commit. Release assets are `<app>.tar.gz` and `release.json` (app, version, commit, CI run, artifact name, and archive SHA-256).
+
+Enable **Settings → General → Releases → Enable release immutability** before publishing releases. GitHub then locks the published assets and tag. The workflow uploads assets to a draft before publishing. It rejects an existing version, and deployment accepts only published immutable releases. If an upload fails and leaves a draft, remove that unpublished draft and its tag before retrying. This demo accepts stable `MAJOR.MINOR.PATCH` versions; no prerelease suffixes yet.
+
+CI artifacts expire after 30 days, so create a release while the artifact is available. Published release assets survive that CI artifact expiration. Creating a release does not contact Cloudflare or change the running app.
+
+## Deploy a release (manual)
+
+| App | Workflow | Example version input | Pages project |
 | --- | --- | --- | --- |
-| Shell | `.github/workflows/deploy-shell.yml` | `Build shell` | `microfrontend-lab-shell` |
-| Catalog | `.github/workflows/deploy-catalog.yml` | `Build catalog` | `microfrontend-lab-catalog` |
-| Orders | `.github/workflows/deploy-orders.yml` | `Build orders` | `microfrontend-lab-orders` |
+| Shell | `.github/workflows/deploy-shell.yml` | `1.0.0` | `microfrontend-lab-shell` |
+| Catalog | `.github/workflows/deploy-catalog.yml` | `1.0.0` | `microfrontend-lab-catalog` |
+| Orders | `.github/workflows/deploy-orders.yml` | `1.0.0` | `microfrontend-lab-orders` |
 
-The workflows download the selected app's artifact and upload those files to Cloudflare Pages. There is no source checkout, pnpm setup, application dependency install, or Vite build in deployment. Node.js is installed only to run the pinned Wrangler deployment CLI.
+Open GitHub → Actions → **Deploy Catalog**, **Deploy Orders**, or **Deploy Shell** → **Run workflow**, choose `main`, and enter a published version. The workflow downloads that app's GitHub Release assets, validates the metadata and archive checksum, and uploads the preserved files to Cloudflare Pages. It never rebuilds or selects the latest version implicitly. To roll back, run the same workflow with an earlier published version. No CI rerun or Git revert is needed.
 
-One-time setup:
+Each app has its own deployment concurrency group and Pages project. Another app's build or deployment failure does not block it. There is no application checkout, pnpm setup, dependency install, or Vite build during release or deployment. Deployment installs Node.js only to run the pinned Wrangler CLI.
 
-1. Create the Cloudflare Pages **Direct Upload** projects listed above, with `main` as their production branch.
-2. Create a Cloudflare API token with **Account → Cloudflare Pages → Edit**, scoped to that account.
-3. In GitHub → Settings → Secrets and variables → Actions, add repository secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`.
-4. Set these repository Actions variables before running CI to build for the hosted demo:
+One-time hosting setup (already configured for this repository):
 
-   | Variable | Value |
-   | --- | --- |
-   | `VITE_CATALOG_ENTRY` | `https://microfrontend-lab-catalog.pages.dev/remoteEntry.js` |
-   | `VITE_ORDERS_ENTRY` | `https://microfrontend-lab-orders.pages.dev/remoteEntry.js` |
-   | `VITE_SHELL_URL` | `https://microfrontend-lab-shell.pages.dev/` |
+1. Create the Cloudflare Pages Direct Upload projects listed above, with `main` as their production branch.
+2. Add GitHub Actions secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (Account → Cloudflare Pages → Edit).
+3. Set repository Actions variables `VITE_CATALOG_ENTRY=https://microfrontend-lab-catalog.pages.dev/remoteEntry.js`, `VITE_ORDERS_ENTRY=https://microfrontend-lab-orders.pages.dev/remoteEntry.js`, and `VITE_SHELL_URL=https://microfrontend-lab-shell.pages.dev/` before building the hosted apps.
 
-These variables affect CI builds. Local development still uses localhost unless you set your own environment variables.
-
-To release:
-
-1. Open a **CI** run from a push to `main` with a completed, successful build job for the app you want to release, and find that app's artifact. Copy the run ID (the number after `/actions/runs/` in the URL). The overall run can be failed or still in progress because of another app.
-2. Open GitHub → Actions → **Deploy Shell**, **Deploy Catalog**, or **Deploy Orders** → **Run workflow**, choose `main`, and enter that CI run ID.
-
-The workflow verifies the selected run belongs to this repository's CI workflow and was triggered by a push to `main`. It then checks only the selected app's build job for that commit and selects its artifact using that job's run attempt (including when only failed jobs were rerun). It records the source commit, CI run, artifact name, and deployment URL in its summary. Missing or expired artifacts fail the deployment; it never silently rebuilds or selects the latest build. To roll back, select an older run with a successful job for that app whose artifact is still retained. Older runs with the previous `Build all apps` job are not accepted by this selector.
-
-URL settings are baked into the CI artifact: changing `VITE_SHELL_URL` afterward does not change an existing artifact. A new CI build is needed to use the new value. Deployment is manual and only runs from `main`. The Catalog and Orders `remoteEntry.js` URLs become the shell's `VITE_CATALOG_ENTRY` and `VITE_ORDERS_ENTRY`, respectively.
+For now, remote addresses are still build-time values and the production Pages URLs change on deployment. **Readable releases are implemented; choosing fixed remote versions from shell runtime configuration is the next step.** Publishing `catalog/v1.1.0` alone does not change the shell, but deploying it to Catalog's current production URL does affect shells using that URL.
 
 There is no backend, authentication, styling, shared application package, or test framework.
