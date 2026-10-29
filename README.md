@@ -69,4 +69,17 @@ These are public, build-time values. Changing them requires rebuilding the affec
 
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main`. It uses Node 24.15.0 and the pnpm version pinned in `package.json`, installs dependencies with `pnpm install --frozen-lockfile`, then runs `pnpm build` through Nx for all three apps. The `Build all apps` check verifies compilation; it does not yet test remote loading in a browser.
 
-There is no backend, authentication, styling, shared application package, test framework, or cloud deployment.
+## Deploy Catalog
+
+Catalog has its own manual release workflow: `.github/workflows/deploy-catalog.yml`. It builds only Catalog, uploads `apps/catalog/dist` to Cloudflare Pages, and records the commit and deployment URL in the workflow summary.
+
+One-time setup:
+
+1. Create a Cloudflare Pages **Direct Upload** project named `microfrontend-lab-catalog`, with `main` as its production branch.
+2. Create a Cloudflare API token with **Account → Cloudflare Pages → Edit**, scoped to that account.
+3. In GitHub → Settings → Secrets and variables → Actions, add repository secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`.
+4. Once the shell is hosted, add a repository variable `VITE_SHELL_URL` with its HTTPS address. Until then, Catalog's navigation link returns to the local shell.
+
+To release, open GitHub → Actions → **Deploy Catalog** → **Run workflow**, choosing `main`. The workflow only deploys from `main`. It is separate from CI and does not run automatically on pushes. The resulting `remoteEntry.js` URL can be used as the shell's `VITE_CATALOG_ENTRY`.
+
+There is no backend, authentication, styling, shared application package, or test framework.
