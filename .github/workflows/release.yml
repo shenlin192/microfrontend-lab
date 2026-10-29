@@ -62,19 +62,11 @@ jobs:
             --arg commit "$SOURCE_COMMIT" --arg run "$GITHUB_RUN_ID" --arg sha256 "$DIGEST" \
             '{app: $app, version: $version, tag: $tag, commit: $commit,
               buildRunId: $run, sha256: $sha256}' > release.json
-          {
-            echo "Source commit: $SOURCE_COMMIT"
-            echo "Release build: https://github.com/$GH_REPO/actions/runs/$GITHUB_RUN_ID"
-            echo "SHA-256 ($APP.tar.gz): $DIGEST"
-            echo
-            echo "Built from $TAG. This release does not deploy the app."
-            echo "Run the app's manual Deploy workflow with version $VERSION to deploy."
-          } > notes.md
           # gh uploads the assets to a draft, then publishes it automatically.
           gh release create "$TAG" "$APP.tar.gz" release.json --verify-tag \
-            --title "$TAG" --notes-file notes.md --latest=false
+            --title "$TAG" --latest=false \
+            --notes "Deploy version $VERSION using this app's manual deployment workflow."
           {
             echo "### Released $TAG"
             echo "Release: https://github.com/$GH_REPO/releases/tag/$TAG"
-            cat notes.md
           } >> "$GITHUB_STEP_SUMMARY"
