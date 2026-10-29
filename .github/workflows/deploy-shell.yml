@@ -27,11 +27,6 @@ jobs:
       APP: shell
       GH_REPO: ${{ github.repository }}
     steps:
-      - name: Check out the configuration and resolver
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - name: Set up Node.js for the deployment CLI
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -53,18 +48,16 @@ jobs:
             .draft == false and .prerelease == false and .immutable == true
           '
           gh release download "$TAG" --pattern "$APP.tar.gz" --pattern release.json --dir release
+          if ! jq -e '.remotes.catalog.version and .remotes.orders.version' release/release.json; then
+            echo "Use shell 1.0.2 or newer: older releases do not freeze their remote configuration."
+            exit 1
+          fi
           COMMIT=$(jq -er '.commit' release/release.json)
           cd release
           printf '%s  %s\n' "$(jq -r .sha256 release.json)" "$APP.tar.gz" | sha256sum --check
           mkdir ../app-dist
           tar -xzf "$APP.tar.gz" -C ../app-dist
           echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
-
-      - name: Resolve the selected remote versions to fixed deployment URLs
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: node scripts/resolve-remotes.mjs config/remotes.production.json app-dist/remotes.json
 
       - name: Deploy the preview without rebuilding
         id: preview
@@ -84,29 +77,7 @@ jobs:
           PREVIEW_URL=$(jq -ser 'map(select(.type == "pages-deploy")) | last.url' "$WRANGLER_OUTPUT_FILE_PATH")
           echo "url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Freeze the reviewed deployment bundle
-        env:
-          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
-          PREVIEW_URL: ${{ steps.preview.outputs.url }}
-        run: |
-          mkdir bundle
-          tar -czf bundle/deployment.tar.gz -C app-dist .
-          DIGEST=$(sha256sum bundle/deployment.tar.gz | cut -d ' ' -f 1)
-          jq -n --arg app "$APP" --arg version "$VERSION" --arg commit "$SOURCE_COMMIT" \
-            --arg configCommit "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" \
-            --arg url "$PREVIEW_URL" --arg sha256 "$DIGEST" \
-            '{app: $app, version: $version, commit: $commit, configCommit: $configCommit,
-              previewRunId: $run, previewUrl: $url, sha256: $sha256}' > bundle/deployment.json
-
-      - name: Save the exact bundle for manual promotion
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ env.APP }}-preview-${{ github.run_id }}-${{ github.run_attempt }}
-          path: bundle/
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Record the preview and promotion input
+      - name: Record the preview and promotion version
         env:
           PREVIEW_URL: ${{ steps.preview.outputs.url }}
         run: |
@@ -114,6 +85,5 @@ jobs:
             echo "### $APP $VERSION preview"
             echo "Review: $PREVIEW_URL"
             echo "Production is unchanged."
-            echo "To promote, run Promote to production with app $APP and preview run ID $GITHUB_RUN_ID."
-            cat bundle/deployment.json
+            echo "To promote, run Promote to production with app $APP and version $VERSION."
           } >> "$GITHUB_STEP_SUMMARY"

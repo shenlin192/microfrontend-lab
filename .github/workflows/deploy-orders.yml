@@ -73,29 +73,7 @@ jobs:
           PREVIEW_URL=$(jq -ser 'map(select(.type == "pages-deploy")) | last.url' "$WRANGLER_OUTPUT_FILE_PATH")
           echo "url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Freeze the reviewed deployment bundle
-        env:
-          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
-          PREVIEW_URL: ${{ steps.preview.outputs.url }}
-        run: |
-          mkdir bundle
-          tar -czf bundle/deployment.tar.gz -C app-dist .
-          DIGEST=$(sha256sum bundle/deployment.tar.gz | cut -d ' ' -f 1)
-          jq -n --arg app "$APP" --arg version "$VERSION" --arg commit "$SOURCE_COMMIT" \
-            --arg configCommit "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" \
-            --arg url "$PREVIEW_URL" --arg sha256 "$DIGEST" \
-            '{app: $app, version: $version, commit: $commit, configCommit: $configCommit,
-              previewRunId: $run, previewUrl: $url, sha256: $sha256}' > bundle/deployment.json
-
-      - name: Save the exact bundle for manual promotion
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ env.APP }}-preview-${{ github.run_id }}-${{ github.run_attempt }}
-          path: bundle/
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Record the preview and promotion input
+      - name: Record the preview and promotion version
         env:
           PREVIEW_URL: ${{ steps.preview.outputs.url }}
         run: |
@@ -103,6 +81,5 @@ jobs:
             echo "### $APP $VERSION preview"
             echo "Review: $PREVIEW_URL"
             echo "Production is unchanged."
-            echo "To promote, run Promote to production with app $APP and preview run ID $GITHUB_RUN_ID."
-            cat bundle/deployment.json
+            echo "To promote, run Promote to production with app $APP and version $VERSION."
           } >> "$GITHUB_STEP_SUMMARY"
