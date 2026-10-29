@@ -26,8 +26,8 @@ The remotes also work on their own URLs. Their links return to the shell.
 ## Read these files
 
 1. `apps/catalog/vite.config.js`: `exposes` makes `./src/App.jsx` available as `./App`.
-2. `apps/shell/vite.config.js`: `remotes` tells the shell where each `remoteEntry.js` lives.
-3. `apps/shell/src/App.jsx`: `lazy(() => import('catalog/App'))` loads that component over the network. `Suspense` handles loading. Hash links choose which component to show.
+2. `apps/shell/public/remotes.json`: selects the remote URLs for local development. `src/main.jsx` fetches this file and registers the remotes before rendering.
+3. `apps/shell/src/App.jsx`: `lazy(() => loadRemote('catalog/App'))` loads that component over the network. `Suspense` handles loading. Hash links choose which component to show.
 4. All three Vite configs: `shared` requests one React/ReactDOM instance at runtime.
 5. `nx.json` and the package scripts: Nx orchestrates ordinary Vite commands. Nx itself does not perform federation.
 
@@ -44,28 +44,35 @@ pnpm build           # Check all three independent production builds
 
 `pnpm dev` runs the three commands together. Keep both remotes running when navigating through the host. `dev.remoteHmr: true` enables React Fast Refresh across the federation boundary. `server.watch.usePolling: true` makes Vite detect edits reliably in this local environment, where native file notifications were missed (polling uses more CPU). Restart `pnpm dev` after changing the Vite configs.
 
-## Configure deployment URLs
+## Select remote versions at runtime
 
-Local development works without any environment variables. To use different addresses, set these variables when building:
+The shell fetches `/remotes.json` with `cache: 'no-store'` at startup, then calls Module Federation's `registerRemotes`. The URL determines the code that loads; `version` is a readable label. Refresh the page after changing the file. Already-open tabs keep their loaded code until refreshed. No configuration is fetched from GitHub in the browser.
 
-| Variable | Used by | Default |
-| --- | --- | --- |
-| `VITE_CATALOG_ENTRY` | Shell | `http://localhost:4101/remoteEntry.js` |
-| `VITE_ORDERS_ENTRY` | Shell | `http://localhost:4102/remoteEntry.js` |
-| `VITE_SHELL_URL` | Catalog and Orders navigation | `http://localhost:4100/` |
+- **Local:** edit `apps/shell/public/remotes.json`. Vite serves this file directly. Its defaults use Catalog on port 4101 and Orders on port 4102.
+- **Production:** edit `config/remotes.production.json`, commit and push, then manually run **Deploy Shell** with the existing shell release version. The workflow reads the configuration from its own Git commit and copies it to the deployment as `remotes.json`. Only this configuration is replaced; the released JavaScript is reused without rebuilding.
 
-For example (replace the example domains with your hosting URLs):
+For example (these domains are placeholders):
 
-```sh
-VITE_CATALOG_ENTRY=https://catalog.example.com/remoteEntry.js \
-VITE_ORDERS_ENTRY=https://orders.example.com/remoteEntry.js \
-VITE_SHELL_URL=https://shell.example.com/ \
-pnpm build
+```json
+{
+  "catalog": {
+    "version": "1.2.0",
+    "entry": "https://<catalog-release-deployment>/remoteEntry.js"
+  },
+  "orders": {
+    "version": "1.0.3",
+    "entry": "https://<orders-release-deployment>/remoteEntry.js"
+  }
+}
 ```
 
-Alternatively, copy each app's `.env.example` to `.env.local` in the same directory and edit its values. Those files are ignored by Git and affect both development and builds; remove them to return to the localhost defaults. Restart the dev servers after changing them.
+Use the unique deployment URL printed by each remote's Cloudflare deployment, such as `https://<deployment-hash>.microfrontend-lab-catalog.pages.dev/remoteEntry.js`. Keep those deployments: deleting one breaks any shell configuration that selects it. A changing project URL such as `microfrontend-lab-catalog.pages.dev` follows future deployments and therefore does not pin a version. The checked-in production file selects Catalog release `1.0.0` and an existing Orders build identified by commit `bfb2d45` (Orders does not yet have a readable release).
 
-These are public, build-time values. Changing them requires rebuilding the affected apps. Nx includes the URL variables in its build cache inputs so changing an address does not reuse a build with the old address. CI reads these three values from GitHub repository Actions variables, using the localhost defaults when they are unset.
+To upgrade or roll back one remote, change only its `version` and `entry`, then redeploy the same shell release. The workflow summary records the shell code's commit, configuration commit, and selected remote configuration. This copies the static files to Pages again, but runs no Vite build. Updating a remote's production URL alone does not change the selected fixed deployment URL.
+
+`apps/shell/public/_headers` disables caching for `/remotes.json` on Cloudflare Pages. The configuration is public; never put secrets in it. The Vite federation config reads the same local JSON only during development to connect React Fast Refresh. Production builds have no configured remote URLs; the browser registers them from the served file. Restart `pnpm dev` if you change a local remote address, so its HMR connection follows the new address.
+
+The shell no longer uses `VITE_CATALOG_ENTRY` or `VITE_ORDERS_ENTRY`. Catalog and Orders still use the public build-time variable `VITE_SHELL_URL` for their navigation links, defaulting to `http://localhost:4100/`. To change it locally, copy the remote app's `.env.example` to `.env.local`. CI reads `VITE_SHELL_URL` from repository Actions variables, and Nx includes it in build cache inputs.
 
 ## Continuous integration
 
@@ -104,7 +111,7 @@ CI artifacts expire after 30 days, so create a release while the artifact is ava
 | Catalog | `.github/workflows/deploy-catalog.yml` | `1.0.0` | `microfrontend-lab-catalog` |
 | Orders | `.github/workflows/deploy-orders.yml` | `1.0.0` | `microfrontend-lab-orders` |
 
-Open GitHub → Actions → **Deploy Catalog**, **Deploy Orders**, or **Deploy Shell** → **Run workflow**, choose `main`, and enter a published version. The workflow downloads that app's GitHub Release assets, validates the metadata and archive checksum, and uploads the preserved files to Cloudflare Pages. It never rebuilds or selects the latest version implicitly. To roll back, run the same workflow with an earlier published version. No CI rerun or Git revert is needed.
+Open GitHub → Actions → **Deploy Catalog**, **Deploy Orders**, or **Deploy Shell** → **Run workflow**, choose `main`, and enter a published version. The workflow downloads that app's GitHub Release assets, validates the metadata and archive checksum, and uploads the files to Cloudflare Pages. Shell deployment additionally applies the production remote configuration described above. It never rebuilds or selects the latest version implicitly. To roll back, run the same workflow with an earlier published version. No CI rerun or Git revert is needed.
 
 Each app has its own deployment concurrency group and Pages project. Another app's build or deployment failure does not block it. There is no application checkout, pnpm setup, dependency install, or Vite build during release or deployment. Deployment installs Node.js only to run the pinned Wrangler CLI.
 
@@ -112,8 +119,8 @@ One-time hosting setup (already configured for this repository):
 
 1. Create the Cloudflare Pages Direct Upload projects listed above, with `main` as their production branch.
 2. Add GitHub Actions secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (Account → Cloudflare Pages → Edit).
-3. Set repository Actions variables `VITE_CATALOG_ENTRY=https://microfrontend-lab-catalog.pages.dev/remoteEntry.js`, `VITE_ORDERS_ENTRY=https://microfrontend-lab-orders.pages.dev/remoteEntry.js`, and `VITE_SHELL_URL=https://microfrontend-lab-shell.pages.dev/` before building the hosted apps.
+3. Set repository Actions variable `VITE_SHELL_URL=https://microfrontend-lab-shell.pages.dev/` before building the hosted remotes. Shell remote URLs are selected in `config/remotes.production.json` at deployment time instead of in CI.
 
-For now, remote addresses are still build-time values and the production Pages URLs change on deployment. **Readable releases are implemented; choosing fixed remote versions from shell runtime configuration is the next step.** Publishing `catalog/v1.1.0` alone does not change the shell, but deploying it to Catalog's current production URL does affect shells using that URL.
+Release and deployment remain manual. The alternative tag-triggered build/release design discussed in the chat has not been applied; the workflow above still promotes existing CI artifacts.
 
 There is no backend, authentication, styling, shared application package, or test framework.

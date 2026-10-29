@@ -1,0 +1,10 @@
+{
+  "catalog": {
+    "version": "dev",
+    "entry": "http://localhost:4101/remoteEntry.js"
+  },
+  "orders": {
+    "version": "dev",
+    "entry": "http://localhost:4102/remoteEntry.js"
+  }
+}

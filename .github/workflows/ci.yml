@@ -23,8 +23,6 @@ jobs:
     timeout-minutes: 10
     env:
       MFE_APP: ${{ matrix.app }}
-      VITE_CATALOG_ENTRY: ${{ vars.VITE_CATALOG_ENTRY || 'http://localhost:4101/remoteEntry.js' }}
-      VITE_ORDERS_ENTRY: ${{ vars.VITE_ORDERS_ENTRY || 'http://localhost:4102/remoteEntry.js' }}
       VITE_SHELL_URL: ${{ vars.VITE_SHELL_URL || 'http://localhost:4100/' }}
     steps:
       - name: Check out code

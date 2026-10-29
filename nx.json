@@ -10,8 +10,6 @@
       "inputs": [
         "default",
         "^default",
-        { "env": "VITE_CATALOG_ENTRY" },
-        { "env": "VITE_ORDERS_ENTRY" },
         { "env": "VITE_SHELL_URL" }
       ],
       "outputs": [

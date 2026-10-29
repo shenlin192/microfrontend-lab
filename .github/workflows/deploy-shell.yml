@@ -59,6 +59,14 @@ jobs:
           tar -xzf "$APP.tar.gz" -C ../app-dist
           echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
 
+      - name: Apply the selected production remote configuration
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GH_REPO/contents/config/remotes.production.json?ref=$GITHUB_SHA" \
+            --jq '.content' | base64 --decode > app-dist/remotes.json
+          jq -e '.catalog.entry and .orders.entry' app-dist/remotes.json
+
       - name: Deploy the artifact without rebuilding
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -79,5 +87,7 @@ jobs:
             echo "### Shell deployment"
             echo "Commit: $SOURCE_COMMIT"
             echo "Release: https://github.com/$GH_REPO/releases/tag/$APP/v$VERSION"
+            echo "Configuration commit: $GITHUB_SHA"
+            cat app-dist/remotes.json
             echo "URL: https://microfrontend-lab-shell.pages.dev"
           } >> "$GITHUB_STEP_SUMMARY"

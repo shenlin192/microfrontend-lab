@@ -1,9 +1,14 @@
-import { defineConfig, loadEnv } from 'vite';
+import { readFileSync } from 'node:fs';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { federation } from '@module-federation/vite';
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, import.meta.dirname);
+export default defineConfig(({ command }) => {
+  // Vite needs the dev addresses to connect the remotes' React Fast Refresh.
+  // Production addresses are registered by main.jsx at runtime instead.
+  const devRemotes = command === 'serve'
+    ? JSON.parse(readFileSync(new URL('./public/remotes.json', import.meta.url), 'utf8'))
+    : {};
 
   return {
     plugins: [
@@ -11,10 +16,9 @@ export default defineConfig(({ mode }) => {
       federation({
         name: 'shell',
         dev: { remoteHmr: true },
-        remotes: {
-          catalog: { type: 'module', name: 'catalog', entry: env.VITE_CATALOG_ENTRY || 'http://localhost:4101/remoteEntry.js' },
-          orders: { type: 'module', name: 'orders', entry: env.VITE_ORDERS_ENTRY || 'http://localhost:4102/remoteEntry.js' },
-        },
+        remotes: Object.fromEntries(Object.entries(devRemotes).map(([name, { entry }]) => [
+          name, { type: 'module', name, entry },
+        ])),
         shared: { react: { singleton: true }, 'react-dom': { singleton: true } },
         dts: false,
       }),

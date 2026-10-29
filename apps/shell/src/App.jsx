@@ -1,8 +1,9 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
+import { loadRemote } from '@module-federation/runtime';
 
 // These modules come from separate Vite servers, not local files.
-const Catalog = lazy(() => import('catalog/App'));
-const Orders = lazy(() => import('orders/App'));
+const Catalog = lazy(() => loadRemote('catalog/App'));
+const Orders = lazy(() => loadRemote('orders/App'));
 
 export default function App() {
   const [page, setPage] = useState(location.hash);
