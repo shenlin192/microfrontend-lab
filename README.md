@@ -71,24 +71,31 @@ These are public, build-time values. Changing them requires rebuilding the affec
 
 Each successful app job from a push to `main` uploads its own `dist` directory as `<app>-<commit SHA>-<run attempt>`, retained for 30 days. An Orders failure does not prevent Catalog's artifact from being uploaded. Pull requests do not produce deployable artifacts. The attempt suffix keeps reruns separate without overwriting earlier artifacts. These checks verify compilation; they do not test remote loading in a browser.
 
-## Deploy Catalog
+## Deploy Catalog and Orders
 
-Catalog has its own manual release workflow: `.github/workflows/deploy-catalog.yml`. It downloads Catalog's artifact from a selected CI run with a successful `Build catalog` job and uploads those files to Cloudflare Pages. It does not depend on the result of the shell or Orders job, or the overall CI conclusion. There is no source checkout, pnpm setup, application dependency install, or Vite build in deployment. Node.js is installed only to run the pinned Wrangler deployment CLI. Shell and Orders have independent build artifacts; their hosting and deployment workflows have not yet been configured.
+Each remote has its own manual release workflow, deployment concurrency group, Pages project, and CI artifact. Each deployment checks only its own app's build job; another app's failure does not block it.
+
+| App | Workflow | Required CI job | Pages project |
+| --- | --- | --- | --- |
+| Catalog | `.github/workflows/deploy-catalog.yml` | `Build catalog` | `microfrontend-lab-catalog` |
+| Orders | `.github/workflows/deploy-orders.yml` | `Build orders` | `microfrontend-lab-orders` |
+
+The workflows download the selected app's artifact and upload those files to Cloudflare Pages. There is no source checkout, pnpm setup, application dependency install, or Vite build in deployment. Node.js is installed only to run the pinned Wrangler deployment CLI. Shell has an independent build artifact; its hosting and deployment workflow have not yet been configured.
 
 One-time setup:
 
-1. Create a Cloudflare Pages **Direct Upload** project named `microfrontend-lab-catalog`, with `main` as its production branch.
+1. Create the Cloudflare Pages **Direct Upload** projects listed above, with `main` as their production branch.
 2. Create a Cloudflare API token with **Account → Cloudflare Pages → Edit**, scoped to that account.
 3. In GitHub → Settings → Secrets and variables → Actions, add repository secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`.
-4. Once the shell is hosted, add a repository variable `VITE_SHELL_URL` with its HTTPS address. Until then, Catalog's navigation link returns to the local shell.
+4. Once the shell is hosted, add a repository variable `VITE_SHELL_URL` with its HTTPS address. Until then, the remotes' navigation links return to the local shell.
 
 To release:
 
-1. Open a **CI** run from a push to `main` with a completed, successful `Build catalog` job and find its Catalog artifact. Copy the run ID (the number after `/actions/runs/` in the URL). The overall run can be failed or still in progress because of another app.
-2. Open GitHub → Actions → **Deploy Catalog** → **Run workflow**, choose `main`, and enter that CI run ID.
+1. Open a **CI** run from a push to `main` with a completed, successful build job for the app you want to release, and find that app's artifact. Copy the run ID (the number after `/actions/runs/` in the URL). The overall run can be failed or still in progress because of another app.
+2. Open GitHub → Actions → **Deploy Catalog** or **Deploy Orders** → **Run workflow**, choose `main`, and enter that CI run ID.
 
-The workflow verifies the selected run belongs to this repository's CI workflow and was triggered by a push to `main`. It then checks only `Build catalog` for that commit and selects its artifact using that job's run attempt (including when only failed jobs were rerun). It records the source commit, CI run, artifact name, and deployment URL in its summary. Missing or expired artifacts fail the deployment; it never silently rebuilds or selects the latest build. To roll back, select an older run with a successful Catalog job whose artifact is still retained. Older runs with the previous `Build all apps` job are not accepted by this selector.
+The workflow verifies the selected run belongs to this repository's CI workflow and was triggered by a push to `main`. It then checks only the selected app's build job for that commit and selects its artifact using that job's run attempt (including when only failed jobs were rerun). It records the source commit, CI run, artifact name, and deployment URL in its summary. Missing or expired artifacts fail the deployment; it never silently rebuilds or selects the latest build. To roll back, select an older run with a successful job for that app whose artifact is still retained. Older runs with the previous `Build all apps` job are not accepted by this selector.
 
-URL settings are baked into the CI artifact: changing `VITE_SHELL_URL` afterward does not change an existing artifact. A new CI build is needed to use the new value. Deployment is manual and only runs from `main`. The resulting `remoteEntry.js` URL can be used as the shell's `VITE_CATALOG_ENTRY`.
+URL settings are baked into the CI artifact: changing `VITE_SHELL_URL` afterward does not change an existing artifact. A new CI build is needed to use the new value. Deployment is manual and only runs from `main`. The Catalog and Orders `remoteEntry.js` URLs become the shell's `VITE_CATALOG_ENTRY` and `VITE_ORDERS_ENTRY`, respectively.
 
 There is no backend, authentication, styling, shared application package, or test framework.
