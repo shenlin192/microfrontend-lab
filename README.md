@@ -2,6 +2,8 @@
 
 Three almost-empty React pages. Vite provides the dev servers, Module Federation loads the remote components, pnpm manages dependencies, and Nx runs the apps together.
 
+[Open the hosted demo](https://microfrontend-lab-shell.pages.dev/). The shell loads Catalog and Orders from their own Cloudflare Pages projects.
+
 ## Run locally
 
 Use Node 24+ and pnpm 11.
@@ -71,28 +73,37 @@ These are public, build-time values. Changing them requires rebuilding the affec
 
 Each successful app job from a push to `main` uploads its own `dist` directory as `<app>-<commit SHA>-<run attempt>`, retained for 30 days. An Orders failure does not prevent Catalog's artifact from being uploaded. Pull requests do not produce deployable artifacts. The attempt suffix keeps reruns separate without overwriting earlier artifacts. These checks verify compilation; they do not test remote loading in a browser.
 
-## Deploy Catalog and Orders
+## Deploy the apps
 
-Each remote has its own manual release workflow, deployment concurrency group, Pages project, and CI artifact. Each deployment checks only its own app's build job; another app's failure does not block it.
+Each app has its own manual release workflow, deployment concurrency group, Pages project, and CI artifact. Each deployment checks only its own app's build job; another app's failure does not block it.
 
 | App | Workflow | Required CI job | Pages project |
 | --- | --- | --- | --- |
+| Shell | `.github/workflows/deploy-shell.yml` | `Build shell` | `microfrontend-lab-shell` |
 | Catalog | `.github/workflows/deploy-catalog.yml` | `Build catalog` | `microfrontend-lab-catalog` |
 | Orders | `.github/workflows/deploy-orders.yml` | `Build orders` | `microfrontend-lab-orders` |
 
-The workflows download the selected app's artifact and upload those files to Cloudflare Pages. There is no source checkout, pnpm setup, application dependency install, or Vite build in deployment. Node.js is installed only to run the pinned Wrangler deployment CLI. Shell has an independent build artifact; its hosting and deployment workflow have not yet been configured.
+The workflows download the selected app's artifact and upload those files to Cloudflare Pages. There is no source checkout, pnpm setup, application dependency install, or Vite build in deployment. Node.js is installed only to run the pinned Wrangler deployment CLI.
 
 One-time setup:
 
 1. Create the Cloudflare Pages **Direct Upload** projects listed above, with `main` as their production branch.
 2. Create a Cloudflare API token with **Account → Cloudflare Pages → Edit**, scoped to that account.
 3. In GitHub → Settings → Secrets and variables → Actions, add repository secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`.
-4. Once the shell is hosted, add a repository variable `VITE_SHELL_URL` with its HTTPS address. Until then, the remotes' navigation links return to the local shell.
+4. Set these repository Actions variables before running CI to build for the hosted demo:
+
+   | Variable | Value |
+   | --- | --- |
+   | `VITE_CATALOG_ENTRY` | `https://microfrontend-lab-catalog.pages.dev/remoteEntry.js` |
+   | `VITE_ORDERS_ENTRY` | `https://microfrontend-lab-orders.pages.dev/remoteEntry.js` |
+   | `VITE_SHELL_URL` | `https://microfrontend-lab-shell.pages.dev/` |
+
+These variables affect CI builds. Local development still uses localhost unless you set your own environment variables.
 
 To release:
 
 1. Open a **CI** run from a push to `main` with a completed, successful build job for the app you want to release, and find that app's artifact. Copy the run ID (the number after `/actions/runs/` in the URL). The overall run can be failed or still in progress because of another app.
-2. Open GitHub → Actions → **Deploy Catalog** or **Deploy Orders** → **Run workflow**, choose `main`, and enter that CI run ID.
+2. Open GitHub → Actions → **Deploy Shell**, **Deploy Catalog**, or **Deploy Orders** → **Run workflow**, choose `main`, and enter that CI run ID.
 
 The workflow verifies the selected run belongs to this repository's CI workflow and was triggered by a push to `main`. It then checks only the selected app's build job for that commit and selects its artifact using that job's run attempt (including when only failed jobs were rerun). It records the source commit, CI run, artifact name, and deployment URL in its summary. Missing or expired artifacts fail the deployment; it never silently rebuilds or selects the latest build. To roll back, select an older run with a successful job for that app whose artifact is still retained. Older runs with the previous `Build all apps` job are not accepted by this selector.
 
