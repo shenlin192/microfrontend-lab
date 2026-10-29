@@ -63,15 +63,17 @@ pnpm build
 
 Alternatively, copy each app's `.env.example` to `.env.local` in the same directory and edit its values. Those files are ignored by Git and affect both development and builds; remove them to return to the localhost defaults. Restart the dev servers after changing them.
 
-These are public, build-time values. Changing them requires rebuilding the affected apps. Nx includes the URL variables in its build cache inputs so changing an address does not reuse a build with the old address. CI still builds with the localhost defaults until we configure a deployment destination.
+These are public, build-time values. Changing them requires rebuilding the affected apps. Nx includes the URL variables in its build cache inputs so changing an address does not reuse a build with the old address. CI reads these three values from GitHub repository Actions variables, using the localhost defaults when they are unset.
 
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main`. It uses Node 24.15.0 and the pnpm version pinned in `package.json`, installs dependencies with `pnpm install --frozen-lockfile`, then runs `pnpm build` through Nx for all three apps. The `Build all apps` check verifies compilation; it does not yet test remote loading in a browser.
 
+Successful builds from pushes to `main` also upload Catalog's `dist` directory as a release artifact named `catalog-<commit SHA>-<run attempt>`, retained for 30 days. Pull requests do not produce deployable artifacts. The attempt suffix keeps reruns separate without overwriting earlier artifacts.
+
 ## Deploy Catalog
 
-Catalog has its own manual release workflow: `.github/workflows/deploy-catalog.yml`. It builds only Catalog, uploads `apps/catalog/dist` to Cloudflare Pages, and records the commit and deployment URL in the workflow summary.
+Catalog has its own manual release workflow: `.github/workflows/deploy-catalog.yml`. It downloads Catalog's artifact from a selected successful CI run and uploads those files to Cloudflare Pages. There is no source checkout, pnpm setup, application dependency install, or Vite build in deployment. Node.js is installed only to run the pinned Wrangler deployment CLI.
 
 One-time setup:
 
@@ -80,6 +82,13 @@ One-time setup:
 3. In GitHub → Settings → Secrets and variables → Actions, add repository secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`.
 4. Once the shell is hosted, add a repository variable `VITE_SHELL_URL` with its HTTPS address. Until then, Catalog's navigation link returns to the local shell.
 
-To release, open GitHub → Actions → **Deploy Catalog** → **Run workflow**, choosing `main`. The workflow only deploys from `main`. It is separate from CI and does not run automatically on pushes. The resulting `remoteEntry.js` URL can be used as the shell's `VITE_CATALOG_ENTRY`.
+To release:
+
+1. Open a successful **CI** run from a push to `main` and find its Catalog artifact. Copy the run ID (the number after `/actions/runs/` in the URL).
+2. Open GitHub → Actions → **Deploy Catalog** → **Run workflow**, choose `main`, and enter that CI run ID.
+
+The workflow verifies the selected run belongs to this repository's CI workflow, was triggered by a push to `main`, and finished successfully. It downloads the artifact for that exact commit and run attempt, then records the source commit, CI run, artifact name, and deployment URL in its summary. Missing or expired artifacts fail the deployment; it never silently rebuilds or selects the latest build. To roll back, select an older successful CI run whose artifact is still retained.
+
+URL settings are baked into the CI artifact: changing `VITE_SHELL_URL` afterward does not change an existing artifact. A new CI build is needed to use the new value. Deployment is manual and only runs from `main`. The resulting `remoteEntry.js` URL can be used as the shell's `VITE_CATALOG_ENTRY`.
 
 There is no backend, authentication, styling, shared application package, or test framework.
