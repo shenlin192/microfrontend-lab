@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       ci_run_id:
-        description: 'Successful CI run ID from a push to main (the number in its URL)'
+        description: 'CI run ID with a successful Build catalog job from a push to main'
         required: true
         type: string
 
@@ -32,7 +32,7 @@ jobs:
           node-version: '24.15.0'
           package-manager-cache: false
 
-      - name: Verify the selected CI run
+      - name: Verify the selected CI source
         id: source
         shell: bash
         env:
@@ -46,16 +46,31 @@ jobs:
             if .path == ".github/workflows/ci.yml"
               and .event == "push" and .head_branch == "main"
               and .head_repository.full_name == $repository
-              and .status == "completed" and .conclusion == "success"
-            then "commit=\(.head_sha)\nartifact=catalog-\(.head_sha)-\(.run_attempt)"
-            else error("Select a successful CI run from a push to main in this repository.")
+            then "commit=\(.head_sha)"
+            else error("Select a CI run from a push to main in this repository.")
+            end
+          ' >> "$GITHUB_OUTPUT"
+
+      # Other apps may still be running or may have failed.
+      - name: Verify only Catalog's build job
+        id: catalog
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/jobs?filter=latest&per_page=100" | jq -er --arg commit "$SOURCE_COMMIT" '
+            [.jobs[] | select(.name == "Build catalog" and .head_sha == $commit)] |
+            if length == 1 and .[0].status == "completed" and .[0].conclusion == "success"
+            then "artifact=catalog-\($commit)-\(.[0].run_attempt)"
+            else error("The selected run must contain a completed, successful Build catalog job.")
             end
           ' >> "$GITHUB_OUTPUT"
 
       - name: Download the exact Catalog artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ${{ steps.source.outputs.artifact }}
+          name: ${{ steps.catalog.outputs.artifact }}
           run-id: ${{ inputs.ci_run_id }}
           github-token: ${{ github.token }}
           path: catalog-dist
@@ -75,7 +90,7 @@ jobs:
       - name: Record deployment
         env:
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
-          ARTIFACT_NAME: ${{ steps.source.outputs.artifact }}
+          ARTIFACT_NAME: ${{ steps.catalog.outputs.artifact }}
         run: |
           {
             echo "### Catalog deployment"
