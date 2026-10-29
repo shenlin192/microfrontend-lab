@@ -65,7 +65,13 @@ The browser fetches `/remotes.json` at startup and registers those URLs with Mod
 
 `scripts/resolve-remotes.mjs` looks up remote version aliases such as `v1-0-2.microfrontend-lab-catalog.pages.dev` through the Cloudflare API, then stores their fixed hash URLs. Keep referenced deployments: deleting one would break shells that select it. Credentials stay in Actions; the browser only receives the resolved URLs.
 
-The shell passes its own URL through the optional `shellUrl` prop so remote navigation stays inside that preview or production shell. Standalone remotes use the public build-time variable `VITE_SHELL_STANDALONE_FALLBACK_URL`, defaulting to `http://localhost:4100/`. For local overrides, copy the remote app's `.env.example` to `.env.local`.
+Remote navigation chooses its shell URL in this order:
+
+1. The `shellUrl` prop supplied by the containing shell: keeps navigation inside that preview or production shell.
+2. `VITE_SHELL_STANDALONE_FALLBACK_URL`: the configured address for a remote opened standalone.
+3. `http://localhost:4100/`: the last-resort default so local development works without configuration.
+
+The environment value is public and set at build time. The release workflow passes the GitHub repository variable directly; the localhost default lives only in the remote code. For local overrides, copy the remote app's `.env.example` to `.env.local`.
 
 ## 1. Release an app
 
