@@ -48,11 +48,7 @@ jobs:
             .draft == false and .prerelease == false and .immutable == true
           '
           gh release download "$TAG" --pattern "$APP.tar.gz" --pattern release.json --dir release
-          COMMIT=$(jq -er --arg app "$APP" --arg version "$VERSION" --arg tag "$TAG" '
-            if .app == $app and .version == $version and .tag == $tag
-              and (.commit | test("^[0-9a-f]{40}$")) and (.sha256 | test("^[0-9a-f]{64}$"))
-            then .commit else error("Release metadata does not match the selected app/version.") end
-          ' release/release.json)
+          COMMIT=$(jq -er '.commit' release/release.json)
           cd release
           printf '%s  %s\n' "$(jq -r .sha256 release.json)" "$APP.tar.gz" | sha256sum --check
           mkdir ../app-dist

@@ -106,7 +106,7 @@ Pushing the tag explicitly requests a release. **It does not deploy anything to 
 | Catalog | `.github/workflows/deploy-catalog.yml` | `1.0.0` | `microfrontend-lab-catalog` |
 | Orders | `.github/workflows/deploy-orders.yml` | `1.0.0` | `microfrontend-lab-orders` |
 
-Open GitHub → Actions → **Deploy Catalog**, **Deploy Orders**, or **Deploy Shell** → **Run workflow**, choose `main`, and enter a published version. The workflow downloads that app's GitHub Release assets, validates the metadata and archive checksum, and uploads the files to Cloudflare Pages. Shell deployment additionally applies the production remote configuration described above. It never rebuilds or selects the latest version implicitly. To roll back, run the same workflow with an earlier published version. No CI rerun or Git revert is needed.
+Open GitHub → Actions → **Deploy Catalog**, **Deploy Orders**, or **Deploy Shell** → **Run workflow**, choose `main`, and enter a published version. The workflow downloads that app's GitHub Release assets, reads the source commit and verifies the archive checksum, and uploads the files to Cloudflare Pages. Shell deployment additionally applies the production remote configuration described above. It never rebuilds or selects the latest version implicitly. To roll back, run the same workflow with an earlier published version. No CI rerun or Git revert is needed.
 
 Each app has its own deployment concurrency group and Pages project. Another app's build or deployment failure does not block it. There is no application checkout, pnpm setup, dependency install, or Vite build during deployment. Deployment installs Node.js only to run the pinned Wrangler CLI.
 
