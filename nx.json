@@ -10,7 +10,7 @@
       "inputs": [
         "default",
         "^default",
-        { "env": "VITE_SHELL_URL" }
+        { "env": "VITE_SHELL_STANDALONE_FALLBACK_URL" }
       ],
       "outputs": [
         "{projectRoot}/dist"

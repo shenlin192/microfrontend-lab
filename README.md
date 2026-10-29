@@ -65,7 +65,7 @@ The browser fetches `/remotes.json` at startup and registers those URLs with Mod
 
 `scripts/resolve-remotes.mjs` looks up remote version aliases such as `v1-0-2.microfrontend-lab-catalog.pages.dev` through the Cloudflare API, then stores their fixed hash URLs. Keep referenced deployments: deleting one would break shells that select it. Credentials stay in Actions; the browser only receives the resolved URLs.
 
-The shell passes its own URL through the optional `shellUrl` prop so remote navigation stays inside that preview or production shell. Standalone remotes use the public build-time variable `VITE_SHELL_URL`, defaulting to `http://localhost:4100/`. For local overrides, copy the remote app's `.env.example` to `.env.local`.
+The shell passes its own URL through the optional `shellUrl` prop so remote navigation stays inside that preview or production shell. Standalone remotes use the public build-time variable `VITE_SHELL_STANDALONE_FALLBACK_URL`, defaulting to `http://localhost:4100/`. For local overrides, copy the remote app's `.env.example` to `.env.local`.
 
 ## 1. Release an app
 
@@ -113,6 +113,6 @@ Already configured for this repository:
 
 1. Three Cloudflare Pages Direct Upload projects: `microfrontend-lab-shell`, `microfrontend-lab-catalog`, and `microfrontend-lab-orders`, with `main` as the production branch.
 2. GitHub Actions secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (Account → Cloudflare Pages → Edit).
-3. Repository Actions variable `VITE_SHELL_URL=https://microfrontend-lab-shell.pages.dev/` for standalone remote links.
+3. Repository Actions variable `VITE_SHELL_STANDALONE_FALLBACK_URL=https://microfrontend-lab-shell.pages.dev/` for standalone remote links.
 
 There is no backend, authentication, styling, shared application package, or test framework.
