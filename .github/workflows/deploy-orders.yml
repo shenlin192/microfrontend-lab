@@ -1,4 +1,4 @@
-name: Deploy Orders
+name: Deploy Orders preview
 
 on:
   workflow_dispatch:
@@ -11,14 +11,14 @@ on:
 permissions:
   contents: read
 
-# Let an active upload finish before starting another Orders deployment.
+# Preview uploads never update the production branch.
 concurrency:
-  group: deploy-orders-production
+  group: deploy-orders-preview
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy Orders to Cloudflare Pages
+    name: Deploy Orders for review
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -55,26 +55,54 @@ jobs:
           tar -xzf "$APP.tar.gz" -C ../app-dist
           echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy the artifact without rebuilding
+      - name: Deploy the preview without rebuilding
+        id: preview
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.jsonl
         run: |
           if [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in repository Actions secrets."
             exit 1
           fi
-          npx --yes wrangler@4.136.3 pages deploy app-dist --project-name=microfrontend-lab-orders --branch=main --commit-hash="$SOURCE_COMMIT"
+          cp release/release.json app-dist/release.json
+          npx --yes wrangler@4.136.3 pages deploy app-dist --project-name=microfrontend-lab-orders \
+            --branch="v${VERSION//./-}" --commit-hash="$SOURCE_COMMIT"
+          PREVIEW_URL=$(jq -ser 'map(select(.type == "pages-deploy")) | last.url' "$WRANGLER_OUTPUT_FILE_PATH")
+          echo "url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Record deployment
+      - name: Freeze the reviewed deployment bundle
         env:
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
+        run: |
+          mkdir bundle
+          tar -czf bundle/deployment.tar.gz -C app-dist .
+          DIGEST=$(sha256sum bundle/deployment.tar.gz | cut -d ' ' -f 1)
+          jq -n --arg app "$APP" --arg version "$VERSION" --arg commit "$SOURCE_COMMIT" \
+            --arg configCommit "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" \
+            --arg url "$PREVIEW_URL" --arg sha256 "$DIGEST" \
+            '{app: $app, version: $version, commit: $commit, configCommit: $configCommit,
+              previewRunId: $run, previewUrl: $url, sha256: $sha256}' > bundle/deployment.json
+
+      - name: Save the exact bundle for manual promotion
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.APP }}-preview-${{ github.run_id }}-${{ github.run_attempt }}
+          path: bundle/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Record the preview and promotion input
+        env:
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
         run: |
           {
-            echo "### Orders deployment"
-            echo "Commit: $SOURCE_COMMIT"
-            echo "Release: https://github.com/$GH_REPO/releases/tag/$APP/v$VERSION"
-            echo "URL: https://microfrontend-lab-orders.pages.dev"
-            echo "Federation entry: https://microfrontend-lab-orders.pages.dev/remoteEntry.js"
+            echo "### $APP $VERSION preview"
+            echo "Review: $PREVIEW_URL"
+            echo "Production is unchanged."
+            echo "To promote, run Promote to production with app $APP and preview run ID $GITHUB_RUN_ID."
+            cat bundle/deployment.json
           } >> "$GITHUB_STEP_SUMMARY"

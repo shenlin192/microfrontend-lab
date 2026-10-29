@@ -21,8 +21,8 @@ export default function App() {
         <a href="#/">Home</a> | <a href="#/catalog">Catalog</a> | <a href="#/orders">Orders</a>
       </nav>
       <Suspense fallback={<p>Loading remote…</p>}>
-        {page === '#/catalog' && <Catalog />}
-        {page === '#/orders' && <Orders />}
+        {page === '#/catalog' && <Catalog shellUrl={location.href} />}
+        {page === '#/orders' && <Orders shellUrl={location.href} />}
       </Suspense>
     </>
   );
