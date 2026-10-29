@@ -44,95 +44,75 @@ pnpm build           # Check all three independent production builds
 
 `pnpm dev` runs the three commands together. Keep both remotes running when navigating through the host. `dev.remoteHmr: true` enables React Fast Refresh across the federation boundary. `server.watch.usePolling: true` makes Vite detect edits reliably in this local environment, where native file notifications were missed (polling uses more CPU). Restart `pnpm dev` after changing the Vite configs.
 
-## Select remote versions at runtime
+## How versions are selected
 
-The shell fetches `/remotes.json` with `cache: 'no-store'` at startup, then calls Module Federation's `registerRemotes`. The URL determines the code that loads; `version` is a readable label. Refresh the page after changing the file. Already-open tabs keep their loaded code until refreshed. No configuration is fetched from GitHub in the browser.
+Each app has its own GitHub Release, such as `shell/v1.0.3`, `catalog/v1.0.2`, or `orders/v1.0.1`.
 
-- **Local:** edit `apps/shell/public/remotes.json`. Vite serves this file directly. Its defaults use Catalog on port 4101 and Orders on port 4102.
-- **Production:** edit `config/remotes.production.json`, commit, and create a new shell release tag. The release workflow reads that tagged configuration, resolves the selected remote versions, and packages the resulting `remotes.json` with the shell. Preview and promotion use those frozen files without reading the latest configuration.
+For a shell deployment, choose three release versions in GitHub Actions:
 
-The production version selection is now just:
-
-```json
-{
-  "catalog": "1.0.2",
-  "orders": "1.0.1"
-}
+```text
+Shell:   1.0.3
+Catalog: 1.0.2
+Orders:  1.0.1
 ```
 
-Deploy the selected remote releases as previews first. Each remote gets a version alias such as `https://v1-0-2.microfrontend-lab-catalog.pages.dev`. `scripts/resolve-remotes.mjs` runs during the shell release build. It uses the Cloudflare API to find the corresponding successful deployment and puts its fixed hash URL into the shell's runtime configuration. It follows pagination, checks the deployed release metadata, and fails if a selected version has not been deployed. No new lookup service is needed, and Cloudflare credentials stay inside GitHub Actions.
+The workflow downloads the shell archive, finds the already deployed Catalog and Orders versions, generates `remotes.json`, and uploads the shell. It does not rebuild or redeploy the remotes. Changing the remote selection does not require a new shell release.
 
-Version aliases can move if the same version is deployed again. The shell release archive stores the fixed hash URLs instead, so its selected remote code stays the same. Keep referenced Cloudflare deployments; deleting one breaks compositions that use it.
+The browser fetches `/remotes.json` at startup and registers those URLs with Module Federation. `version` is a readable label; `entry` selects the actual code. The file is public and contains no credentials. Refresh the page to load a new selection.
 
-A shell version identifies **both its code and its remote selection**. Changing a remote version requires a new shell release tag. This deliberately rebuilds the small shell, while Catalog and Orders keep their independent releases. Preview and promotion never rebuild or resolve the configuration again. To roll back the whole composition, promote an earlier shell release that includes frozen remote configuration.
+- Locally, edit `apps/shell/public/remotes.json`. Its defaults use ports 4101 and 4102. Restart `pnpm dev` if an address changes so React Fast Refresh reconnects.
+- In hosted deployments, the workflow generates the file from its three version inputs. There is no `config/remotes.production.json` and shell releases do not freeze remote selections.
 
-`apps/shell/public/_headers` disables caching for `/remotes.json` on Cloudflare Pages. The configuration is public; never put secrets in it. The Vite federation config reads the same local JSON only during development to connect React Fast Refresh. Production builds have no configured remote URLs; the browser registers them from the served file. Restart `pnpm dev` if you change a local remote address, so its HMR connection follows the new address.
+`scripts/resolve-remotes.mjs` looks up remote version aliases such as `v1-0-2.microfrontend-lab-catalog.pages.dev` through the Cloudflare API, then stores their fixed hash URLs. Keep referenced deployments: deleting one would break shells that select it. Credentials stay in Actions; the browser only receives the resolved URLs.
 
-The shell no longer uses `VITE_CATALOG_ENTRY` or `VITE_ORDERS_ENTRY`. When rendering a remote, the shell passes its current URL as the optional `shellUrl` prop, so cross-navigation stays inside the preview or production shell. Standalone remotes fall back to the public build-time variable `VITE_SHELL_URL`, defaulting to `http://localhost:4100/`. To change it locally, copy the remote app's `.env.example` to `.env.local`. The release workflow reads `VITE_SHELL_URL` from repository Actions variables, and Nx includes it in build cache inputs.
+The shell passes its own URL through the optional `shellUrl` prop so remote navigation stays inside that preview or production shell. Standalone remotes use the public build-time variable `VITE_SHELL_URL`, defaulting to `http://localhost:4100/`. For local overrides, copy the remote app's `.env.example` to `.env.local`.
 
-## Release an app
+## 1. Release an app
 
-Push a readable app version tag to build and publish only that app:
+Push a new app version tag:
 
 ```sh
 git tag catalog/v1.2.0
 git push origin catalog/v1.2.0
 ```
 
-Use a new version each time. `catalog/v1.2.0` is an example; choose `orders/v1.0.0` or `shell/v1.1.0` to release those apps. Tag the commit you want to release. Only commits containing this tag-triggered workflow support the new process; older commits may still contain the previous workflow.
+`release.yml` builds only the tagged app, then publishes these GitHub Release assets:
 
-`.github/workflows/release.yml` reads the app and version from the tag, checks out that tagged source, installs dependencies with the pinned Node/pnpm versions, and runs `pnpm nx build <app>`. If the build fails, no release is published. Other apps are not built and do not gate this release. A normal branch push or pull request does not start a build: this small demo no longer has a separate CI workflow. Build failures are caught when releasing. You can still run `pnpm build` locally before tagging.
+- `<app>.tar.gz`: the compiled app.
+- `release.json`: app, version, source commit, and archive checksum.
 
-On success, find the named release under GitHub → **Releases** → **Assets**:
+A failed build does not publish a release. There is no separate CI workflow; ordinary branch pushes and pull requests do not build automatically. Use `pnpm build` locally whenever needed. Version tags must use stable `MAJOR.MINOR.PATCH` numbers. Tag commits containing the current release workflow.
 
-- `<app>.tar.gz`: the deployable build; shell archives also contain their resolved production `remotes.json`.
-- `release.json`: app, version, tag, source commit, release build run, and archive SHA-256. For the shell it also records the frozen `remotes`.
+Release immutability is enabled for this repository. The GitHub CLI handles uploading and publishing, and existing releases are never overwritten. If an upload fails and leaves an unpublished draft, remove the draft before rerunning the workflow; keep its tag at the same commit. Creating a release does not deploy it.
 
-Releasing requires no CI run ID, manual release form, or artifact search. Preview and promotion both download the same permanent GitHub Release assets; there are no separate deployment versions, preview bundles, or artifact retention deadlines. Each version is built once for publication; deploying or rolling back uses the published files without rebuilding. This release build is independent of any earlier build you ran locally.
+## 2. Deploy the remote versions
 
-Release immutability is enabled for this repository. A single `gh release create` command uploads the assets and publishes the release. The CLI handles the temporary draft internally so all assets are uploaded before GitHub locks the published assets and tag. Existing versions are never overwritten. If an upload fails and leaves an unpublished draft, remove that draft before rerunning the failed workflow; keep the tag at the same commit. This demo accepts stable `MAJOR.MINOR.PATCH` versions, without prerelease suffixes.
+Run **Deploy Catalog preview** or **Deploy Orders preview** from `main` and enter that app's published version. The workflow downloads the archive and deploys it under its version alias. Each remote stays independently released and deployed.
 
-Pushing the tag explicitly requests a release. **It does not deploy anything to Cloudflare.**
+Only deploy a remote again when needed; a shell deployment can reuse any compatible remote version that is already available. Earlier remote releases without the `shellUrl` prop may navigate back to the stable shell instead of staying inside a preview.
 
-## Deploy a preview (manual)
+## 3. Preview a composition
 
-The flow is **Release → Deploy preview → Review → Promote**. There is no permanent staging project. Every preview has its own review URL and leaves the production URL unchanged.
+Run **Deploy Shell preview** from `main` with the Shell, Catalog, and Orders versions you want to review.
 
-| App | Preview workflow | Example release input | Pages project |
-| --- | --- | --- | --- |
-| Shell | `Deploy Shell preview` | `1.0.2` | `microfrontend-lab-shell` |
-| Catalog | `Deploy Catalog preview` | `1.0.2` | `microfrontend-lab-catalog` |
-| Orders | `Deploy Orders preview` | `1.0.1` | `microfrontend-lab-orders` |
+Open the deployment URL in its summary and check navigation and remote loading. Production stays unchanged. Each run gets its own fixed review URL; the `preview` alias follows the latest shell preview.
 
-1. Run each remote's preview workflow from `main`, supplying an existing published version.
-2. Select those remote versions in `config/remotes.production.json`, commit the file, and push a **new shell release tag**. The release build freezes the resolved configuration inside the shell archive.
-3. Run **Deploy Shell preview** from `main`, supplying that shell release version.
-4. Open the fixed hash URL in the workflow summary to review routing and remote loading.
+## 4. Deploy Production
 
-Each preview workflow verifies and extracts the selected immutable GitHub Release, then uploads its files with a version branch such as `v1-0-2` instead of `main`. The release metadata is served alongside the app as `/release.json`. No source checkout, dependency installation, Vite build, or configuration resolution runs during preview deployment. Deploying the same version again uploads the same files. The optional `shellUrl` prop keeps remote navigation in the current shell.
+Run **Deploy Production** from `main` and enter the three desired versions. It deploys the selected composition to [the production shell](https://microfrontend-lab-shell.pages.dev/).
 
-## Promote to production (manual)
+Preview and Production call the same `deploy-composition.yml` workflow; the target branch is `preview` or `main`. There is no rebuild, promotion record, separate deployment version, or preview artifact to manage. The workflow checks archive checksums and relies on normal GitHub/Cloudflare errors for missing releases or credentials. Summaries show only versions and URLs.
 
-1. Open **Promote to production** in GitHub Actions and choose `main`.
-2. Select the app and enter the **release version**, for example `shell` and `1.0.2`.
-3. The workflow downloads that immutable release and verifies its archive checksum. It checks that the version's preview URL serves the same release metadata, then uploads the same release files with `--branch=main`.
+Production can assemble any selected combination. Reviewing the same three versions first is a manual practice, not an enforced promotion gate. To roll back, run Deploy Production with the previous three versions. Keep a record of those values in the workflow summaries.
 
-Promotion updates `https://microfrontend-lab-<app>.pages.dev`. It does not rebuild, read the current version file, or resolve remote aliases. The shell's remote configuration is already part of the archive you reviewed. Concurrent promotions are serialized per app. To roll back, select an earlier frozen release version; there is no run ID to find and no expiring preview bundle.
+Existing runtime-configurable shell releases remain usable. If an older archive contains frozen remote configuration, deployment replaces it with the versions you select now. The archive and GitHub Release stay unchanged.
 
-For example:
+## One-time hosting setup
 
-```text
-Release shell/v1.0.2 → Preview 1.0.2 → Review → Promote 1.0.2
-```
+Already configured for this repository:
 
-For micro frontends, promoting the **shell composition** changes which versions users load. Promoting a remote's standalone production URL is optional: a shell that pins a fixed remote hash URL keeps that selection regardless of the standalone URL.
-
-One-time hosting setup (already configured for this repository):
-
-1. Create the Cloudflare Pages Direct Upload projects listed above, with `main` as their production branch.
-2. Add GitHub Actions secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (Account → Cloudflare Pages → Edit).
-3. Set repository Actions variable `VITE_SHELL_URL=https://microfrontend-lab-shell.pages.dev/` before building the hosted remotes. Shell remote versions are selected in `config/remotes.production.json` and frozen during the shell release build.
-
-Existing remote releases remain usable. **Shell releases `1.0.0` and `1.0.1` predate frozen production configuration and are rejected by the new version-only workflows. Use shell `1.0.2` or a newer release created with this process.** Existing production deployments remain available in Cloudflare history.
+1. Three Cloudflare Pages Direct Upload projects: `microfrontend-lab-shell`, `microfrontend-lab-catalog`, and `microfrontend-lab-orders`, with `main` as the production branch.
+2. GitHub Actions secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (Account → Cloudflare Pages → Edit).
+3. Repository Actions variable `VITE_SHELL_URL=https://microfrontend-lab-shell.pages.dev/` for standalone remote links.
 
 There is no backend, authentication, styling, shared application package, or test framework.

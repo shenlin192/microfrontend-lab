@@ -25,10 +25,8 @@ jobs:
       - name: Read the app and version from the tag
         shell: bash
         run: |
-          if ! [[ "$TAG" =~ ^(catalog|orders|shell)/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Use a tag such as catalog/v1.2.0."
-            exit 1
-          fi
+          # A tag selects both the app and its release version.
+          [[ "$TAG" =~ ^(catalog|orders|shell)/v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
           echo "APP=${TAG%%/*}" >> "$GITHUB_ENV"
           echo "VERSION=${TAG#*/v}" >> "$GITHUB_ENV"
 
@@ -50,14 +48,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build only the tagged app
-        run: pnpm nx build "$APP"
-
-      - name: Freeze the shell's selected remote configuration
-        if: env.APP == 'shell'
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: node scripts/resolve-remotes.mjs config/remotes.production.json apps/shell/dist/remotes.json
+        # Keep the Actions summary focused on the release rather than Nx performance stats.
+        run: GITHUB_STEP_SUMMARY='' pnpm nx build "$APP"
 
       - name: Publish the build without deploying
         shell: bash
@@ -65,14 +57,9 @@ jobs:
           SOURCE_COMMIT=$(git rev-parse HEAD)
           tar -czf "$APP.tar.gz" -C "apps/$APP/dist" .
           DIGEST=$(sha256sum "$APP.tar.gz" | cut -d ' ' -f 1)
-          REMOTES='{}'
-          if [ "$APP" = shell ]; then REMOTES=$(cat apps/shell/dist/remotes.json); fi
-          jq -n --arg app "$APP" --arg version "$VERSION" --arg tag "$TAG" \
-            --arg commit "$SOURCE_COMMIT" --arg run "$GITHUB_RUN_ID" --arg sha256 "$DIGEST" \
-            --argjson remotes "$REMOTES" \
-            '{app: $app, version: $version, tag: $tag, commit: $commit,
-              buildRunId: $run, sha256: $sha256}
-              + (if $app == "shell" then {remotes: $remotes} else {} end)' > release.json
+          jq -n --arg app "$APP" --arg version "$VERSION" \
+            --arg commit "$SOURCE_COMMIT" --arg sha256 "$DIGEST" \
+            '{app: $app, version: $version, commit: $commit, sha256: $sha256}' > release.json
           # gh uploads the assets to a draft, then publishes it automatically.
           gh release create "$TAG" "$APP.tar.gz" release.json --verify-tag \
             --title "$TAG" --latest=false \

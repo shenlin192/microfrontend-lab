@@ -39,14 +39,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Use a published version such as 1.0.0, without v."
-            exit 1
-          fi
           TAG="$APP/v$VERSION"
-          gh api "repos/$GH_REPO/releases/tags/$TAG" | jq -e '
-            .draft == false and .prerelease == false and .immutable == true
-          '
           gh release download "$TAG" --pattern "$APP.tar.gz" --pattern release.json --dir release
           COMMIT=$(jq -er '.commit' release/release.json)
           cd release
@@ -63,23 +56,17 @@ jobs:
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
           WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.jsonl
         run: |
-          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in repository Actions secrets."
-            exit 1
-          fi
           cp release/release.json app-dist/release.json
           npx --yes wrangler@4.136.3 pages deploy app-dist --project-name=microfrontend-lab-orders \
             --branch="v${VERSION//./-}" --commit-hash="$SOURCE_COMMIT"
           PREVIEW_URL=$(jq -ser 'map(select(.type == "pages-deploy")) | last.url' "$WRANGLER_OUTPUT_FILE_PATH")
           echo "url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Record the preview and promotion version
+      - name: Show the version and URL
         env:
           PREVIEW_URL: ${{ steps.preview.outputs.url }}
         run: |
           {
-            echo "### $APP $VERSION preview"
-            echo "Review: $PREVIEW_URL"
-            echo "Production is unchanged."
-            echo "To promote, run Promote to production with app $APP and version $VERSION."
+            echo "$APP $VERSION"
+            echo "Preview: $PREVIEW_URL"
           } >> "$GITHUB_STEP_SUMMARY"

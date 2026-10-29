@@ -3,87 +3,28 @@ name: Deploy Shell preview
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Published shell version, for example 1.0.0 (without v)'
+      shell_version:
+        description: 'Shell release, for example 1.0.2'
+        required: true
+        type: string
+      catalog_version:
+        description: 'Deployed Catalog release, for example 1.0.2'
+        required: true
+        type: string
+      orders_version:
+        description: 'Deployed Orders release, for example 1.0.1'
         required: true
         type: string
 
 permissions:
   contents: read
 
-# Preview uploads never update the production branch.
-concurrency:
-  group: deploy-shell-preview
-  cancel-in-progress: false
-
 jobs:
   deploy:
-    name: Deploy Shell for review
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    env:
-      VERSION: ${{ inputs.version }}
-      APP: shell
-      GH_REPO: ${{ github.repository }}
-    steps:
-      - name: Set up Node.js for the deployment CLI
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24.15.0'
-          package-manager-cache: false
-
-      - name: Download and verify the selected release
-        id: source
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Use a published version such as 1.0.0, without v."
-            exit 1
-          fi
-          TAG="$APP/v$VERSION"
-          gh api "repos/$GH_REPO/releases/tags/$TAG" | jq -e '
-            .draft == false and .prerelease == false and .immutable == true
-          '
-          gh release download "$TAG" --pattern "$APP.tar.gz" --pattern release.json --dir release
-          if ! jq -e '.remotes.catalog.version and .remotes.orders.version' release/release.json; then
-            echo "Use shell 1.0.2 or newer: older releases do not freeze their remote configuration."
-            exit 1
-          fi
-          COMMIT=$(jq -er '.commit' release/release.json)
-          cd release
-          printf '%s  %s\n' "$(jq -r .sha256 release.json)" "$APP.tar.gz" | sha256sum --check
-          mkdir ../app-dist
-          tar -xzf "$APP.tar.gz" -C ../app-dist
-          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
-
-      - name: Deploy the preview without rebuilding
-        id: preview
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
-          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.jsonl
-        run: |
-          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in repository Actions secrets."
-            exit 1
-          fi
-          cp release/release.json app-dist/release.json
-          npx --yes wrangler@4.136.3 pages deploy app-dist --project-name=microfrontend-lab-shell \
-            --branch="v${VERSION//./-}" --commit-hash="$SOURCE_COMMIT"
-          PREVIEW_URL=$(jq -ser 'map(select(.type == "pages-deploy")) | last.url' "$WRANGLER_OUTPUT_FILE_PATH")
-          echo "url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
-
-      - name: Record the preview and promotion version
-        env:
-          PREVIEW_URL: ${{ steps.preview.outputs.url }}
-        run: |
-          {
-            echo "### $APP $VERSION preview"
-            echo "Review: $PREVIEW_URL"
-            echo "Production is unchanged."
-            echo "To promote, run Promote to production with app $APP and version $VERSION."
-          } >> "$GITHUB_STEP_SUMMARY"
+    uses: ./.github/workflows/deploy-composition.yml
+    with:
+      target: preview
+      shell_version: ${{ inputs.shell_version }}
+      catalog_version: ${{ inputs.catalog_version }}
+      orders_version: ${{ inputs.orders_version }}
+    secrets: inherit

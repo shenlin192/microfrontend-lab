@@ -1,0 +1,30 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      shell_version:
+        description: 'Shell release, for example 1.0.2'
+        required: true
+        type: string
+      catalog_version:
+        description: 'Deployed Catalog release, for example 1.0.2'
+        required: true
+        type: string
+      orders_version:
+        description: 'Deployed Orders release, for example 1.0.1'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy-composition.yml
+    with:
+      target: production
+      shell_version: ${{ inputs.shell_version }}
+      catalog_version: ${{ inputs.catalog_version }}
+      orders_version: ${{ inputs.orders_version }}
+    secrets: inherit

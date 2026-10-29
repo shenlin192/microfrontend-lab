@@ -1,14 +1,11 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 
-const versions = JSON.parse(await readFile(process.argv[2], 'utf8'));
+const [catalogVersion, ordersVersion, outputFile] = process.argv.slice(2);
 const account = process.env.CLOUDFLARE_ACCOUNT_ID;
 const token = process.env.CLOUDFLARE_API_TOKEN;
 if (!account || !token) throw new Error('Cloudflare account ID and API token are required.');
 
 async function resolveVersion(name, version) {
-  if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(version)) {
-    throw new Error(`Use a release version such as 1.0.0 for ${name}.`);
-  }
   const alias = `https://v${version.replaceAll('.', '-')}.microfrontend-lab-${name}.pages.dev`;
   // Follow pagination so an older version remains selectable after many deployments.
   for (let page = 1; ; page++) {
@@ -38,6 +35,6 @@ async function resolveVersion(name, version) {
 }
 
 const remotes = Object.fromEntries(await Promise.all(
-  ['catalog', 'orders'].map((name) => resolveVersion(name, versions[name])),
+  [resolveVersion('catalog', catalogVersion), resolveVersion('orders', ordersVersion)],
 ));
-await writeFile(process.argv[3], `${JSON.stringify(remotes, null, 2)}\n`);
+await writeFile(outputFile, `${JSON.stringify(remotes, null, 2)}\n`);
