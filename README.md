@@ -72,36 +72,31 @@ To upgrade or roll back one remote, change only its `version` and `entry`, then 
 
 `apps/shell/public/_headers` disables caching for `/remotes.json` on Cloudflare Pages. The configuration is public; never put secrets in it. The Vite federation config reads the same local JSON only during development to connect React Fast Refresh. Production builds have no configured remote URLs; the browser registers them from the served file. Restart `pnpm dev` if you change a local remote address, so its HMR connection follows the new address.
 
-The shell no longer uses `VITE_CATALOG_ENTRY` or `VITE_ORDERS_ENTRY`. Catalog and Orders still use the public build-time variable `VITE_SHELL_URL` for their navigation links, defaulting to `http://localhost:4100/`. To change it locally, copy the remote app's `.env.example` to `.env.local`. CI reads `VITE_SHELL_URL` from repository Actions variables, and Nx includes it in build cache inputs.
+The shell no longer uses `VITE_CATALOG_ENTRY` or `VITE_ORDERS_ENTRY`. Catalog and Orders still use the public build-time variable `VITE_SHELL_URL` for their navigation links, defaulting to `http://localhost:4100/`. To change it locally, copy the remote app's `.env.example` to `.env.local`. The release workflow reads `VITE_SHELL_URL` from repository Actions variables, and Nx includes it in build cache inputs.
 
-## Continuous integration
+## Release an app
 
-`.github/workflows/ci.yml` runs on pull requests and pushes to `main`. A matrix creates three independent jobs: `Build shell`, `Build catalog`, and `Build orders`. Each has its own runner, installs dependencies with `pnpm install --frozen-lockfile`, and runs `pnpm nx build <app>` for only that app. The jobs use Node 24.15.0 and the pnpm version pinned in `package.json`. `fail-fast: false` ensures one app's failure does not cancel the others. There are no build-job dependencies between apps.
+Push a readable app version tag to build and publish only that app:
 
-Each successful app job from a push to `main` uploads its own `dist` directory as `<app>-<commit SHA>-<run attempt>`, retained for 30 days. An Orders failure does not prevent Catalog's artifact from being uploaded. Pull requests do not produce deployable artifacts. The attempt suffix keeps reruns separate without overwriting earlier artifacts. These checks verify compilation; they do not test remote loading in a browser.
+```sh
+git tag catalog/v1.2.0
+git push origin catalog/v1.2.0
+```
 
-## Release an app (manual)
+Use a new version each time. `catalog/v1.2.0` is an example; choose `orders/v1.0.0` or `shell/v1.1.0` to release those apps. Tag the commit you want to release. Only commits containing this tag-triggered workflow support the new process; older commits may still contain the previous workflow.
 
-CI never releases or deploys automatically. Each app has its own readable version, such as `catalog/v1.0.0`, `orders/v1.0.0`, or `shell/v1.0.0`. Versions do not need to advance together.
+`.github/workflows/release.yml` reads the app and version from the tag, checks out that tagged source, installs dependencies with the pinned Node/pnpm versions, and runs `pnpm nx build <app>`. If the build fails, no release is published. Other apps are not built and do not gate this release. A normal branch push or pull request does not start a build: this small demo no longer has a separate CI workflow. Build failures are caught when releasing. You can still run `pnpm build` locally before tagging.
 
-1. Open a CI run from a push to `main`. Copy its run ID and source commit SHA. Only the selected app's build job needs to have succeeded; another app may have failed or still be running.
-2. Push a new lightweight version tag at that source commit (replace `<CI_COMMIT_SHA>` with the actual SHA):
+On success, find the named release under GitHub → **Releases** → **Assets**:
 
-   ```sh
-   git tag catalog/v1.0.0 <CI_COMMIT_SHA>
-   git push origin catalog/v1.0.0
-   ```
+- `<app>.tar.gz`: the deployable build, used as-is by manual deployment.
+- `release.json`: app, version, tag, source commit, release build run, and archive SHA-256.
 
-3. Open GitHub → Actions → **Release app** → **Run workflow**, choose `main`, the app, version `1.0.0` (without `v`), and the CI run ID.
-4. Find the resulting GitHub Release, for example `catalog/v1.0.0`.
+There are no CI run IDs to copy, manual release form, artifact searches, or expiring Actions artifacts. Each version is built once for publication; deploying or rolling back uses the published files without rebuilding. This release build is independent of any earlier build you ran locally.
 
-Pushing a version tag does not build, release, or deploy automatically. Creating the tag explicitly also avoids granting an extra personal token to Actions just to tag an older commit.
+Release immutability is enabled for this repository. The workflow uploads assets to a draft before publishing, then GitHub locks the published assets and tag. Existing versions are never overwritten. If an upload fails and leaves an unpublished draft, remove that draft before rerunning the failed workflow; keep the tag at the same commit. This demo accepts stable `MAJOR.MINOR.PATCH` versions, without prerelease suffixes.
 
-The workflow verifies the CI source, the selected app's successful job, and that the version tag points to exactly that CI commit. It downloads the exact artifact and archives its files without rebuilding. The release workflow itself runs from `main`, so it can publish builds of older commits. Release assets are `<app>.tar.gz` and `release.json` (app, version, commit, CI run, artifact name, and archive SHA-256).
-
-Enable **Settings → General → Releases → Enable release immutability** before publishing releases. GitHub then locks the published assets and tag. The workflow uploads assets to a draft before publishing. It rejects an existing release, and deployment accepts only published immutable releases. If an upload fails and leaves a draft, remove that unpublished draft before retrying; keep the tag at the same source commit. This demo accepts stable `MAJOR.MINOR.PATCH` versions; no prerelease suffixes yet.
-
-CI artifacts expire after 30 days, so create a release while the artifact is available. Published release assets survive that CI artifact expiration. Creating a release does not contact Cloudflare or change the running app.
+Pushing the tag explicitly requests a release. **It does not deploy anything to Cloudflare.**
 
 ## Deploy a release (manual)
 
@@ -113,14 +108,14 @@ CI artifacts expire after 30 days, so create a release while the artifact is ava
 
 Open GitHub → Actions → **Deploy Catalog**, **Deploy Orders**, or **Deploy Shell** → **Run workflow**, choose `main`, and enter a published version. The workflow downloads that app's GitHub Release assets, validates the metadata and archive checksum, and uploads the files to Cloudflare Pages. Shell deployment additionally applies the production remote configuration described above. It never rebuilds or selects the latest version implicitly. To roll back, run the same workflow with an earlier published version. No CI rerun or Git revert is needed.
 
-Each app has its own deployment concurrency group and Pages project. Another app's build or deployment failure does not block it. There is no application checkout, pnpm setup, dependency install, or Vite build during release or deployment. Deployment installs Node.js only to run the pinned Wrangler CLI.
+Each app has its own deployment concurrency group and Pages project. Another app's build or deployment failure does not block it. There is no application checkout, pnpm setup, dependency install, or Vite build during deployment. Deployment installs Node.js only to run the pinned Wrangler CLI.
 
 One-time hosting setup (already configured for this repository):
 
 1. Create the Cloudflare Pages Direct Upload projects listed above, with `main` as their production branch.
 2. Add GitHub Actions secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (Account → Cloudflare Pages → Edit).
-3. Set repository Actions variable `VITE_SHELL_URL=https://microfrontend-lab-shell.pages.dev/` before building the hosted remotes. Shell remote URLs are selected in `config/remotes.production.json` at deployment time instead of in CI.
+3. Set repository Actions variable `VITE_SHELL_URL=https://microfrontend-lab-shell.pages.dev/` before building the hosted remotes. Shell remote URLs are selected in `config/remotes.production.json` at deployment time instead of during the release build.
 
-Release and deployment remain manual. The alternative tag-triggered build/release design discussed in the chat has not been applied; the workflow above still promotes existing CI artifacts.
+Existing releases such as `catalog/v1.0.0` and `shell/v1.0.0` remain deployable. Their metadata records the earlier CI artifact; newer releases record their own release build run instead.
 
 There is no backend, authentication, styling, shared application package, or test framework.
