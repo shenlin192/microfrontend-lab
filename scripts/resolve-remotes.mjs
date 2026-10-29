@@ -13,12 +13,13 @@ async function resolveVersion(name, version) {
   // Follow pagination so an older version remains selectable after many deployments.
   for (let page = 1; ; page++) {
     const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${account}/pages/projects/microfrontend-lab-${name}/deployments?env=preview&per_page=100&page=${page}`,
+      `https://api.cloudflare.com/client/v4/accounts/${account}/pages/projects/microfrontend-lab-${name}/deployments?env=preview&page=${page}`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
-    if (!response.ok) throw new Error(`Cannot resolve ${name}: Cloudflare HTTP ${response.status}.`);
     const data = await response.json();
-    if (!data.success) throw new Error(`Cannot resolve ${name}: ${JSON.stringify(data.errors)}`);
+    if (!response.ok || !data.success) {
+      throw new Error(`Cannot resolve ${name}: Cloudflare HTTP ${response.status}, ${JSON.stringify(data.errors)}`);
+    }
     const deployment = data.result.find((item) =>
       item.aliases?.includes(alias) && item.latest_stage.status === 'success');
     if (deployment) {
@@ -31,7 +32,7 @@ async function resolveVersion(name, version) {
       }
       return [name, { version, entry: `${deployment.url}/remoteEntry.js` }];
     }
-    if (data.result.length === 0) break;
+    if (data.result.length === 0 || page >= data.result_info?.total_pages) break;
   }
   throw new Error(`${name} ${version} is not deployed. Run its Deploy preview workflow first.`);
 }
